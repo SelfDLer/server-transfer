@@ -2,6 +2,14 @@
 
 专门用于把本地文件通过 GitHub 传送到服务器。
 
+## 当前文件
+
+- `files/install_nextqa_a3_npu_manual.sh`：Ascend A3 / Qwen3-Omni 的 Conda 环境搭建手动清单，附 NExT-QA 数据与训练示例。
+
+先修改脚本第 1 节的路径、Conda 安装目录、硬件与训练配置，再在 Linux Bash 中逐节执行。
+不要直接整体 `bash` 或 `source` 此文件。环境通过 `conda create -p` 创建；
+新终端运行时执行第 1 节和第 12 节。原有依赖冲突说明仍保留，安装后需要检查实际结果。
+
 ## 本地上传
 
 把需要传送的文件或目录复制到 `files/`，然后在本仓库目录运行：
