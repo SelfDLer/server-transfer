@@ -14,7 +14,7 @@ export ENV_ROOT=/workspace/a3-vllm030
 export SRC_DIR="$ENV_ROOT/src"
 export ENV_PREFIX="$ENV_ROOT/conda"
 export LOG_DIR="$ENV_ROOT/logs"
-export CONDA_ROOT="$HOME/miniconda3"
+# 使用当前 shell 中的 conda；运行 conda info --base 可查看它的安装根目录。
 export PYTHON_VERSION=3.12
 export CONSTRAINTS_FILE="$ENV_ROOT/npu-constraints.txt"
 export REQUIREMENTS_FILE="$ENV_ROOT/environment-requirements.txt"
@@ -182,18 +182,24 @@ ffprobe -version
 # 在这里确认 CANN 为 9.1.0，且 NPU/ATB 可用，再往下执行；Python 由 Conda 安装。
 
 # ===== 3. 用 Conda 按绝对路径创建独立环境（不复用旧训练环境） =====
-# Conda 已安装；CONDA_ROOT 指向 Miniconda/Anaconda 安装根目录。
+# 使用当前 shell 中的 conda，自动查询其安装根目录并加载同一套初始化脚本。
+# conda info --base 查看 Conda 本体目录；echo "$CONDA_PREFIX" 查看当前激活环境目录。
 # 如当前在旧训练环境，先 conda deactivate，再执行本节。
 # 目标 prefix 已存在时不创建也不激活；修改第 1 节的路径后重新执行本节。
 # 创建成功才激活，避免失败后把包误装到 base 或旧环境。
-if [[ ! -f "$CONDA_ROOT/etc/profile.d/conda.sh" ]]; then
-  printf '找不到 Conda 初始化脚本，请检查 CONDA_ROOT：%s\n' "$CONDA_ROOT" >&2
+if ! command -v conda >/dev/null 2>&1; then
+  printf '当前 shell 找不到 conda，请先加载你要使用的 Conda，再执行本节。\n' >&2
+elif ! active_conda_base="$(conda info --base)"; then
+  printf '无法查询当前 Conda 的安装根目录，请检查 conda info --base。\n' >&2
+elif [[ -z "$active_conda_base" || ! -r "$active_conda_base/etc/profile.d/conda.sh" ]]; then
+  printf '当前 Conda 初始化脚本不可读取：%s/etc/profile.d/conda.sh\n' "$active_conda_base" >&2
 elif [[ "$ENV_PREFIX" != /* ]]; then
   printf 'ENV_PREFIX 必须是绝对路径：%s\n' "$ENV_PREFIX" >&2
 elif [[ -e "$ENV_PREFIX" ]]; then
   printf '目标环境已存在，请改用新目录：%s\n' "$ENV_PREFIX" >&2
 else
-  source "$CONDA_ROOT/etc/profile.d/conda.sh" &&
+  printf '使用当前 Conda：%s\n' "$active_conda_base"
+  source "$active_conda_base/etc/profile.d/conda.sh" &&
   conda --version &&
   mkdir -p "$SRC_DIR" "$LOG_DIR" &&
   conda create -y -p "$ENV_PREFIX" "python=$PYTHON_VERSION" pip &&

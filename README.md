@@ -6,7 +6,9 @@
 
 - `files/install_nextqa_a3_npu_manual.sh`：Ascend A3 / Qwen3-Omni 的 Conda 环境安装与验证清单。
 
-先修改脚本第 1 节的路径、Conda 安装目录和安装配置，再在 Linux Bash 中逐节执行。
+先修改脚本第 1 节的路径和安装配置，再在 Linux Bash 中逐节执行。
+默认使用当前 shell 中的 `conda`，通过 `conda info --base` 查询其安装根目录，
+并加载该目录下的初始化脚本。`echo "$CONDA_PREFIX"` 可查看当前激活环境的目录。
 不要直接整体 `bash` 或 `source` 此文件。环境通过 `conda create -p` 创建；
 安装后检查依赖、模块导入和 NPU 基础运算。原有依赖冲突说明仍保留。
 `SOC_VERSION` 默认留空，由固定版本的 vLLM-Ascend 在构建时通过 `npu-smi` 自动识别；
