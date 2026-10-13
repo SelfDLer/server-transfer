@@ -68,6 +68,7 @@ export MOONCAKE_VERSION=0.3.11.post1
 # 下载源。
 export PIP_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 export ASCEND_PIP_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi
+export TORCH_NPU_INDEX_URL=https://mirrors.huaweicloud.com/repository/pypi/simple
 export PYTORCH_CPU_INDEX_URL=https://mirror.sjtu.edu.cn/pytorch-wheels/cpu/
 export MOONCAKE_INDEX_URL=https://mirrors.aliyun.com/pypi/web/simple
 # pip 对这些域名跳过证书验证；空格分隔，仅填写主机名（可带端口）。
@@ -325,7 +326,7 @@ python -m pip install --force-reinstall \
   "torch==$TORCH_VERSION" "torchvision==$TORCHVISION_VERSION" "torchaudio==$TORCHAUDIO_VERSION" \
   --index-url "$PYTORCH_CPU_INDEX_URL"
 python -m pip install "torch-npu==$TORCH_NPU_VERSION" \
-  --extra-index-url "$ASCEND_PIP_INDEX_URL" --extra-index-url "$PYTORCH_CPU_INDEX_URL"
+  --index-url "$TORCH_NPU_INDEX_URL" --extra-index-url "$PYTORCH_CPU_INDEX_URL"
 
 # ===== 6. vLLM 0.30：NPU 路径使用 empty target，不安装 CUDA vLLM wheel =====
 git clone --depth 1 --branch "$VLLM_REF" https://github.com/vllm-project/vllm.git "$SRC_DIR/vllm"
@@ -405,7 +406,7 @@ python -m pip install --force-reinstall --no-deps \
   "torch==$TORCH_VERSION" "torchvision==$TORCHVISION_VERSION" "torchaudio==$TORCHAUDIO_VERSION" \
   --index-url "$PYTORCH_CPU_INDEX_URL"
 python -m pip install --force-reinstall --no-deps "torch-npu==$TORCH_NPU_VERSION" \
-  --extra-index-url "$ASCEND_PIP_INDEX_URL"
+  --index-url "$TORCH_NPU_INDEX_URL" --extra-index-url "$PYTORCH_CPU_INDEX_URL"
 python -m pip install --upgrade onnxruntime -c "$CONSTRAINTS_FILE"
 # 安装日志如出现其他依赖冲突，先记录并处理。
 
