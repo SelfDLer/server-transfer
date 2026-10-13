@@ -25,10 +25,10 @@ Conda 默认使用[清华 conda-forge 镜像](https://mirrors.tuna.tsinghua.edu.
 pip 的 [`PIP_TRUSTED_HOST`](https://pip.pypa.io/en/stable/cli/pip/#cmdoption-trusted-host)
 在第 1 节集中配置，默认覆盖交大镜像及下载域名（`mirror.sjtu.edu.cn`、`s3.jcloud.sjtu.edu.cn`）、PyTorch 官方域名、华为 Ascend、清华和阿里镜像域名，对这些域名跳过证书验证。
 PyTorch CPU 包默认从交大 `https://mirror.sjtu.edu.cn/pytorch-wheels/cpu/` 安装。
-`torch-npu` 的首次安装和最终版本对齐使用 `TORCH_NPU_INDEX_URL`，默认为华为云通用 PyPI 源
+`torch-npu` 的首次安装和最终版本对齐使用 `HUAWEI_PIP_INDEX_URL`，默认为华为云通用 PyPI 源
 `https://mirrors.huaweicloud.com/repository/pypi/simple`，并保留交大 CPU 源作为额外索引。
 其他 Ascend 包仍使用 `ASCEND_PIP_INDEX_URL` 指定的专用源。
-第 6 节先从 `VLLM_PIP_INDEX_URL`（默认华为云通用 PyPI 源）安装并验证 `regex`，
+第 6 节先从 `HUAWEI_PIP_INDEX_URL`（默认华为云通用 PyPI 源）安装并验证 `regex`，
 vLLM 安装也显式使用该通用源，并以交大 CPU 源作为额外索引，避免仅从 PyTorch 专用源查找普通依赖。
 所有 pip 安装命令（包括 torch 和 torch-npu）共用此设置，第 3 节通过 `conda env config vars` 保存。
 更换镜像或遇到下载重定向到其他域名时，按实际下载地址调整列表，多个主机名用空格分隔。
