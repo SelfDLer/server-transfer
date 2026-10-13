@@ -18,6 +18,10 @@ Git、编译器、构建工具、音视频库、NUMA/RDMA 用户态库和 C++ �
 Conda 默认使用[清华 conda-forge 镜像](https://mirrors.tuna.tsinghua.edu.cn/help/anaconda/)，
 创建环境时通过 [`--insecure`](https://docs.conda.io/projects/conda/en/latest/commands/create.html)
 跳过 TLS 证书验证，仅作用于该次创建命令。
+创建命令优先采用当前 shell 的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 和 `NO_PROXY`
+（也支持小写，小写优先，显式空值同样生效）。只要其中任一变量存在，便在本次 Conda
+进程内清空 `proxy_servers`，由下载后端读取 shell 设置；全部未设置时沿用 Conda 配置。
+代理不写入 `.condarc` 或 `conda env config vars`，不会固定到创建后的环境。
 NPU 驱动、固件、CANN/ATB 和内核 RDMA 驱动使用主机安装。
 
 第 3 节从 `ASCEND_ROOT` 加载 Toolkit/ATB 的 `set_env.sh`，然后通过

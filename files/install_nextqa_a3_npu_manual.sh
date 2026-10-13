@@ -98,6 +98,29 @@ export OMP_NUM_THREADS=1
 # 如当前在旧训练环境，先 conda deactivate，再执行本节。
 # 目标 prefix 已存在时不创建也不激活；修改第 1 节的路径后重新执行本节。
 # 创建成功才激活，避免失败后把包误装到 base 或旧环境。
+# 仅对创建命令优先采用 shell 代理；代理地址不保存到环境或配置文件。
+conda_with_shell_proxy() {
+  "$active_conda_base/bin/python" - "$@" <<'PY'
+import os
+import sys
+
+proxy_names = ('http_proxy', 'https_proxy', 'all_proxy', 'no_proxy')
+# 小写优先；显式空值也代表 shell 的选择。统一大小写以兼容不同下载后端。
+use_shell_proxy = any(name in os.environ or name.upper() in os.environ for name in proxy_names)
+if use_shell_proxy:
+    for name in proxy_names:
+        value = os.environ.get(name, os.environ.get(name.upper()))
+        if value is not None:
+            os.environ[name] = os.environ[name.upper()] = value
+    from conda.base.context import context
+    # Conda CLI 没有单次清空 proxy_servers 的参数，且空 condarc 会合并旧代理。
+    # 仅在这个独立进程内覆盖配置，让下载后端读取 shell 的代理及 NO_PROXY。
+    context.proxy_servers = {}
+
+from conda.cli.main import main
+sys.exit(main(*sys.argv[1:]))
+PY
+}
 if ! command -v conda >/dev/null 2>&1; then
   printf '当前 shell 找不到 conda，请先加载你要使用的 Conda，再执行本节。\n' >&2
 elif ! active_conda_base="$(conda info --base)"; then
@@ -114,7 +137,7 @@ else
   conda --version &&
   mkdir -p "$SRC_DIR" "$LOG_DIR" &&
   # --insecure 仅对本次创建跳过 TLS 证书验证。
-  conda create -y --insecure -p "$ENV_PREFIX" --override-channels -c "$CONDA_CHANNEL" \
+  conda_with_shell_proxy create -y --insecure -p "$ENV_PREFIX" --override-channels -c "$CONDA_CHANNEL" \
     --strict-channel-priority "python=$PYTHON_VERSION" "${CONDA_PACKAGES[@]}" &&
   conda activate "$ENV_PREFIX" &&
 # 确认 Python 确实来自指定 prefix 且版本正确，通过后才执行 pip 安装。
