@@ -4,14 +4,16 @@
 
 ## 当前文件
 
-- `files/install_nextqa_a3_npu_manual.sh`：Ascend A3 / Qwen3-Omni 的 Conda 环境搭建手动清单，附 NExT-QA 数据与训练示例。
+- `files/install_nextqa_a3_npu_manual.sh`：Ascend A3 / Qwen3-Omni 的 Conda 环境安装与验证清单。
 
-先修改脚本第 1 节的路径、Conda 安装目录、硬件与训练配置，再在 Linux Bash 中逐节执行。
+先修改脚本第 1 节的路径、Conda 安装目录和安装配置，再在 Linux Bash 中逐节执行。
 不要直接整体 `bash` 或 `source` 此文件。环境通过 `conda create -p` 创建；
-新终端运行时执行第 1 节和第 12 节。原有依赖冲突说明仍保留，安装后需要检查实际结果。
+安装后检查依赖、模块导入和 NPU 基础运算。原有依赖冲突说明仍保留。
+`SOC_VERSION` 默认留空，由固定版本的 vLLM-Ascend 在构建时通过 `npu-smi` 自动识别；
+识别失败会报错，也可在开头手动填写目标芯片型号。
 系统依赖默认自动选择 apt-get、dnf 或 yum，普通用户自动使用 sudo。
 第 1 节可指定 `SYSTEM_PACKAGE_MANAGER=apt/dnf/yum/skip`，并调整对应包列表；
-RPM 系统的音视频软件源需按机器实际情况配置。jemalloc 路径支持自动查找或手动指定。
+RPM 系统的音视频软件源需按机器实际情况配置。
 Ascend 只配置 `ASCEND_ROOT` 基础路径，再从该路径下加载 Toolkit 和 ATB 的 `set_env.sh`；
 源码按固定上游版本安装。
 
