@@ -15,6 +15,9 @@
 识别失败会报错，也可在开头手动填写目标芯片型号。
 Git、编译器、构建工具、音视频库、NUMA/RDMA 用户态库和 C++ 运行库优先安装到 Conda。
 第 1 节集中配置 `CONDA_CHANNEL`、编译器版本及 `CONDA_PACKAGES`；源码按固定上游版本安装。
+Conda 默认使用[清华 conda-forge 镜像](https://mirrors.tuna.tsinghua.edu.cn/help/anaconda/)，
+创建环境时通过 [`--insecure`](https://docs.conda.io/projects/conda/en/latest/commands/create.html)
+跳过 TLS 证书验证，仅作用于该次创建命令。
 NPU 驱动、固件、CANN/ATB 和内核 RDMA 驱动使用主机安装。
 
 第 3 节从 `ASCEND_ROOT` 加载 Toolkit/ATB 的 `set_env.sh`，然后通过

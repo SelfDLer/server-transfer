@@ -20,7 +20,7 @@ export CONSTRAINTS_FILE="$ENV_ROOT/npu-constraints.txt"
 export REQUIREMENTS_FILE="$ENV_ROOT/environment-requirements.txt"
 
 # Conda 软件源和包列表；先安装全部 Conda 包，再安装下面的 pip 包。
-export CONDA_CHANNEL=conda-forge
+export CONDA_CHANNEL=https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
 export GCC_VERSION=12
 export CLANG_VERSION=15
 CONDA_PACKAGES=(
@@ -113,7 +113,8 @@ else
   source "$active_conda_base/etc/profile.d/conda.sh" &&
   conda --version &&
   mkdir -p "$SRC_DIR" "$LOG_DIR" &&
-  conda create -y -p "$ENV_PREFIX" --override-channels -c "$CONDA_CHANNEL" \
+  # --insecure 仅对本次创建跳过 TLS 证书验证。
+  conda create -y --insecure -p "$ENV_PREFIX" --override-channels -c "$CONDA_CHANNEL" \
     --strict-channel-priority "python=$PYTHON_VERSION" "${CONDA_PACKAGES[@]}" &&
   conda activate "$ENV_PREFIX" &&
 # 确认 Python 确实来自指定 prefix 且版本正确，通过后才执行 pip 安装。
