@@ -12,6 +12,8 @@ set -o pipefail
 # 环境与源码目录；Conda 使用绝对路径 prefix，不使用环境名称。
 export ENV_ROOT=/workspace/a3-vllm030
 export SRC_DIR="$ENV_ROOT/src"
+# 已有 verl-omni 源码的绝对路径；安装时保留其分支、提交和本地修改。
+export VERL_OMNI_DIR="/path/to/your/verl-omni"
 export ENV_PREFIX="$ENV_ROOT/conda"
 export LOG_DIR="$ENV_ROOT/logs"
 # 使用当前 shell 中的 conda；运行 conda info --base 可查看它的安装根目录。
@@ -37,15 +39,15 @@ CONDA_PACKAGES=(
 export PRELOAD_CONDA_LIBSTDCXX=0
 
 # Ascend 只配置安装基础路径，从其下的官方 set_env.sh 加载环境。
-# 标准布局：ascend-toolkit/set_env.sh 和 nnal/atb/set_env.sh。
-export ASCEND_ROOT=/usr/local/Ascend
+# 指向 Toolkit 目录：set_env.sh 和 ../nnal/atb/set_env.sh。
+export ASCEND_ROOT=/usr/local/Ascend/ascend-toolkit
 # 留空时，固定版本的 vLLM-Ascend setup.py 通过 npu-smi 自动识别芯片。
 # 无可见 NPU 或识别失败时，可手动填入目标型号，例如 ascend910_9391。
 export SOC_VERSION=""
 export COMPILE_CUSTOM_KERNELS=1
 
 # 固定上游源码版本；更换版本前重新核对上游兼容性。
-export VERL_OMNI_REF=14049614953cb92edacc3809dd2a60179d44c394
+# verl-omni 使用 VERL_OMNI_DIR 中的现有版本，其余源码固定如下。
 export VLLM_REF=v0.30.0
 export VLLM_ASCEND_REF=39fef3f8fe71e71a8b7a684ae0f62b85ff18661f
 export VLLM_OMNI_REF=12e9280010afc41ce5c6a1f46900fc329cf08377
@@ -78,7 +80,7 @@ export OMP_NUM_THREADS=1
 # ===== 固定版本说明 =====
 #
 # 查询时官方 main：14049614953cb92edacc3809dd2a60179d44c394
-# 为了可复现，固定这次查询到的 SHA，不在安装过程中追随浮动 main。
+# 以下兼容性说明以此 SHA 为基准；自有 verl-omni 版本变化时需重新核对依赖。
 # 依据：
 # https://github.com/verl-project/verl-omni/blob/14049614953cb92edacc3809dd2a60179d44c394/pyproject.toml
 #
@@ -167,8 +169,8 @@ configure_conda_environment() (
   # 清除旧源码路径，再由官方脚本设置 CANN 自身需要的 Python 路径。
   unset PYTHONPATH
   # CANN 环境脚本可能读取未定义变量，此处不要启用 set -u。
-  source "$ASCEND_ROOT/ascend-toolkit/set_env.sh" || return 1
-  source "$ASCEND_ROOT/nnal/atb/set_env.sh" || return 1
+  source "$ASCEND_ROOT/set_env.sh" || return 1
+  source "$ASCEND_ROOT/../nnal/atb/set_env.sh" || return 1
   python - <<'PY'
 import json
 import os
@@ -200,6 +202,7 @@ settings.update({
     'PYTHONNOUSERSITE': '1',
     'ENV_ROOT': os.environ['ENV_ROOT'],
     'SRC_DIR': os.environ['SRC_DIR'],
+    'VERL_OMNI_DIR': os.environ['VERL_OMNI_DIR'],
     'LOG_DIR': os.environ['LOG_DIR'],
 })
 preload = os.environ.get('PRELOAD_CONDA_LIBSTDCXX', '0')
@@ -229,8 +232,8 @@ conda env config vars list -p "$ENV_PREFIX"
 
 # PATH 由 Conda 管理，不将安装时的完整 PATH 固定在环境配置中。
 # 编译需要 CANN 工具时，加载 PATH 后再次应用 Conda 变量以维持 libstdc++ 的优先级。
-source "$ASCEND_ROOT/ascend-toolkit/set_env.sh"
-source "$ASCEND_ROOT/nnal/atb/set_env.sh"
+source "$ASCEND_ROOT/set_env.sh"
+source "$ASCEND_ROOT/../nnal/atb/set_env.sh"
 conda deactivate && conda activate "$ENV_PREFIX"
 
 check_environment_tools() {
@@ -262,14 +265,28 @@ assert loaded == {expected}, (
     loaded, expected)
 PY
 
-# ===== 4. 安装固定版本的上游 verl-omni 源码 =====
-git clone https://github.com/verl-project/verl-omni.git "$SRC_DIR/verl-omni"
-cd "$SRC_DIR/verl-omni"
-git checkout --detach "$VERL_OMNI_REF"
-# 核对上游声明的配套版本。
-test "$(tr -d '[:space:]' < .github/vllm_ascend_pin.txt)" = "$VLLM_ASCEND_REF"
-test "$(tr -d '[:space:]' < .github/vllm_omni_pin.txt)" = "$VLLM_OMNI_REF"
-test "$(tr -d '[:space:]' < .github/verl_pin.txt)" = "$VERL_REF"
+# ===== 4. 检查自有 verl-omni 源码 =====
+check_verl_omni_source() (
+  if [[ "$VERL_OMNI_DIR" != /* || ! -f "$VERL_OMNI_DIR/pyproject.toml" || ! -d "$VERL_OMNI_DIR/verl_omni" ]]; then
+    printf '请将 VERL_OMNI_DIR 设为已有 verl-omni 项目的绝对路径：%s\n' "$VERL_OMNI_DIR" >&2
+    return 1
+  fi
+  cd "$VERL_OMNI_DIR" || return 1
+  # 有 pin 文件时核对配套版本；不对自有源码执行 clone/checkout/reset。
+  for entry in "vllm_ascend:$VLLM_ASCEND_REF" "vllm_omni:$VLLM_OMNI_REF" "verl:$VERL_REF"; do
+    pin_file=".github/${entry%%:*}_pin.txt"
+    if [[ -f "$pin_file" ]]; then
+      if [[ "$(tr -d '[:space:]' < "$pin_file")" != "${entry#*:}" ]]; then
+        printf '版本配置与 %s 不一致，请核对第 1 节后再继续。\n' "$pin_file" >&2
+        return 1
+      fi
+    else
+      printf '未找到 %s，请手动核对该引擎的配套版本。\n' "$pin_file"
+    fi
+  done
+)
+check_verl_omni_source
+# 检查失败时停止，修正路径或版本后再继续。
 
 # ===== 5. 基础 Python / PyTorch / 通信依赖 =====
 python -m pip install modelscope "ray[default]==$RAY_VERSION" 'protobuf>3.20.0'
@@ -316,8 +333,7 @@ git checkout --detach "$VERL_REF"
 python -m pip install -e . \
   --extra-index-url "$ASCEND_PIP_INDEX_URL" --extra-index-url "$PYTORCH_CPU_INDEX_URL"
 
-cd "$SRC_DIR/verl-omni"
-python -m pip install --no-deps -e .
+python -m pip install --no-deps -e "$VERL_OMNI_DIR"
 python -m pip install Levenshtein
 
 # ===== 9. 补全 Python 与音视频依赖，最终对齐版本 =====
@@ -340,8 +356,8 @@ import pathlib
 import tomllib
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
-src = pathlib.Path(os.environ['SRC_DIR'])
-project = tomllib.loads((src / 'verl-omni/pyproject.toml').read_text())['project']
+source = pathlib.Path(os.environ['VERL_OMNI_DIR'])
+project = tomllib.loads((source / 'pyproject.toml').read_text())['project']
 engine_packages = {'vllm', 'vllm-omni', 'verl'}
 deps = [r for r in project['dependencies']
         if canonicalize_name(Requirement(r).name) not in engine_packages]
@@ -420,7 +436,9 @@ for name in ('vllm', 'vllm_ascend', 'vllm_omni', 'verl', 'verl_omni'):
     module = importlib.import_module(name)
     path = pathlib.Path(module.__file__).resolve()
     print(name, version(name.replace('_', '-')), path)
-    assert path.is_relative_to(root), (name, 'loaded outside new checkout', path)
+    expected_source = (pathlib.Path(os.environ['VERL_OMNI_DIR']).resolve()
+                       if name == 'verl_omni' else root / name.replace('_', '-'))
+    assert path.is_relative_to(expected_source), (name, 'loaded outside configured checkout', path, expected_source)
 for name in ('ray', 'transformers', 'accelerate', 'peft', 'TransferQueue',
              'qwen-omni-utils', 'qwen-vl-utils', 'av', 'torchaudio'):
     print(name, version(name))
@@ -453,7 +471,13 @@ result = subprocess.run([os.environ['CONDA_EXE'], 'run', '-p', os.environ['ENV_P
 sys.exit(result.returncode)
 PY
 # 检查输出与退出状态；出现 import/ABI/API 错误时先解决安装问题。
-for repo in vllm vllm-ascend vllm-omni verl verl-omni; do
-  printf '%s ' "$repo"
-  git -C "$SRC_DIR/$repo" rev-parse HEAD
-done | tee "$LOG_DIR/source-shas.txt"
+{
+  for repo in vllm vllm-ascend vllm-omni verl; do
+    printf '%s ' "$repo"
+    git -C "$SRC_DIR/$repo" rev-parse HEAD
+  done
+  printf 'verl-omni path: %s\n' "$VERL_OMNI_DIR"
+  git -C "$VERL_OMNI_DIR" rev-parse HEAD
+  # 同时记录自有源码是否含本地修改，SHA 本身不能代表未提交内容。
+  git -C "$VERL_OMNI_DIR" status --short
+} | tee "$LOG_DIR/source-shas.txt"

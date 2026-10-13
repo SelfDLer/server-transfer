@@ -14,7 +14,11 @@
 `SOC_VERSION` 默认留空，由固定版本的 vLLM-Ascend 在构建时通过 `npu-smi` 自动识别；
 识别失败会报错，也可在开头手动填写目标芯片型号。
 Git、编译器、构建工具、音视频库、NUMA/RDMA 用户态库和 C++ 运行库优先安装到 Conda。
-第 1 节集中配置 `CONDA_CHANNEL`、编译器版本及 `CONDA_PACKAGES`；源码按固定上游版本安装。
+第 1 节集中配置 `CONDA_CHANNEL`、编译器版本及 `CONDA_PACKAGES`。
+将 `VERL_OMNI_DIR` 改为你已有的 verl-omni 项目绝对路径，例如 `/mnt/share/你的目录/verl-omni`。
+verl-omni 从该目录做 editable 安装，保留现有分支、提交和本地修改；其余四个源码仓库仍放在 `src/` 并固定版本。
+依赖读取、导入路径检查和版本记录均使用 `VERL_OMNI_DIR`；第 4 节核对自有源码中已有的引擎 pin 文件。
+该路径在第 3 节通过 `conda env config vars` 持久保存；迁移源码后需更新配置并重新执行 editable 安装。
 Conda 默认使用[清华 conda-forge 镜像](https://mirrors.tuna.tsinghua.edu.cn/help/anaconda/)，
 创建环境时通过 [`--insecure`](https://docs.conda.io/projects/conda/en/latest/commands/create.html)
 跳过 TLS 证书验证，仅作用于该次创建命令。
@@ -27,10 +31,10 @@ Conda 默认使用[清华 conda-forge 镜像](https://mirrors.tuna.tsinghua.edu.
 且本次服务器使用的清华 `linux-aarch64` 源报告缺少 `sox`。以后使用 Qwen3-TTS 时需另行补齐。
 NPU 驱动、固件、CANN/ATB 和内核 RDMA 驱动使用主机安装。
 
-第 3 节从 `ASCEND_ROOT` 加载 Toolkit/ATB 的 `set_env.sh`，然后通过
+`ASCEND_ROOT` 指向 Toolkit 目录，第 3 节加载其 `set_env.sh` 和 `../nnal/atb/set_env.sh`，然后通过
 `conda env config vars set -p "$ENV_PREFIX"` 保存 Ascend 变量和库路径。
 `LD_LIBRARY_PATH` 的第一项是当前环境的 `lib`，`PYTHONNOUSERSITE=1` 避免混入用户目录的包。
-Python 包使用 editable 安装，`src/` 必须保留；不会把源码仓库拼进 `PYTHONPATH` 来掩盖安装问题。
+Python 包使用 editable 安装，`src/` 和自有 `VERL_OMNI_DIR` 都必须保留；不会把源码仓库拼进 `PYTHONPATH` 来掩盖安装问题。
 此配置使用 Conda 自身的环境变量管理，正常 `conda activate`/`conda deactivate` 即可应用/恢复变量。
 `PATH` 交给 Conda 管理，不持久化安装终端的完整 PATH。更换 CANN 路径后需重做第 3 节。
 
