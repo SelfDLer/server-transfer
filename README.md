@@ -28,6 +28,8 @@ PyTorch CPU 包默认从交大 `https://mirror.sjtu.edu.cn/pytorch-wheels/cpu/` 
 `torch-npu` 的首次安装和最终版本对齐使用 `TORCH_NPU_INDEX_URL`，默认为华为云通用 PyPI 源
 `https://mirrors.huaweicloud.com/repository/pypi/simple`，并保留交大 CPU 源作为额外索引。
 其他 Ascend 包仍使用 `ASCEND_PIP_INDEX_URL` 指定的专用源。
+第 6 节先从 `VLLM_PIP_INDEX_URL`（默认华为云通用 PyPI 源）安装并验证 `regex`，
+vLLM 安装也显式使用该通用源，并以交大 CPU 源作为额外索引，避免仅从 PyTorch 专用源查找普通依赖。
 所有 pip 安装命令（包括 torch 和 torch-npu）共用此设置，第 3 节通过 `conda env config vars` 保存。
 更换镜像或遇到下载重定向到其他域名时，按实际下载地址调整列表，多个主机名用空格分隔。
 创建命令优先采用当前 shell 的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 和 `NO_PROXY`

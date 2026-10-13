@@ -69,6 +69,7 @@ export MOONCAKE_VERSION=0.3.11.post1
 export PIP_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 export ASCEND_PIP_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi
 export TORCH_NPU_INDEX_URL=https://mirrors.huaweicloud.com/repository/pypi/simple
+export VLLM_PIP_INDEX_URL=https://mirrors.huaweicloud.com/repository/pypi/simple
 export PYTORCH_CPU_INDEX_URL=https://mirror.sjtu.edu.cn/pytorch-wheels/cpu/
 export MOONCAKE_INDEX_URL=https://mirrors.aliyun.com/pypi/web/simple
 # pip 对这些域名跳过证书验证；空格分隔，仅填写主机名（可带端口）。
@@ -331,8 +332,12 @@ python -m pip install "torch-npu==$TORCH_NPU_VERSION" \
 # ===== 6. vLLM 0.30：NPU 路径使用 empty target，不安装 CUDA vLLM wheel =====
 git clone --depth 1 --branch "$VLLM_REF" https://github.com/vllm-project/vllm.git "$SRC_DIR/vllm"
 cd "$SRC_DIR/vllm"
+# regex 是普通 PyPI 依赖；先从通用源安装并验证，再安装 vLLM。
+python -m pip install regex --index-url "$VLLM_PIP_INDEX_URL" &&
+python -c 'import regex; print(regex.__version__, regex.__file__)' &&
 VLLM_TARGET_DEVICE=empty python -m pip install -e '.[audio]' \
-  --extra-index-url "$PYTORCH_CPU_INDEX_URL"
+  --index-url "$VLLM_PIP_INDEX_URL" --extra-index-url "$PYTORCH_CPU_INDEX_URL"
+# 安装失败时先处理报错，不要继续后面的卸载和安装步骤。
 python -m pip uninstall -y triton
 
 # ===== 7. vLLM-Ascend：自动识别芯片并构建自定义算子 =====
