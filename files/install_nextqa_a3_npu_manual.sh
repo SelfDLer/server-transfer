@@ -42,25 +42,19 @@ RPM_MEDIA_PACKAGES=(ffmpeg)
 # export CC=clang-15
 # export CXX=clang++-15
 
-# Ascend 安装目录和系统库路径，按服务器实际安装位置修改。
-export ASCEND_TOOLKIT_ROOT=/usr/local/Ascend/ascend-toolkit
-export ATB_ROOT=/usr/local/Ascend/nnal/atb
-export ASCEND_DRIVER_ROOT=/usr/local/Ascend/driver
-export LOCAL_LIB_DIR=/usr/local/lib
+# Ascend 只配置安装基础路径，从其下的官方 set_env.sh 加载环境。
+# 标准布局：ascend-toolkit/set_env.sh 和 nnal/atb/set_env.sh。
+export ASCEND_ROOT=/usr/local/Ascend
 export JEMALLOC_LIB=""  # 留空自动查找；也可指定完整 .so 路径，或设 none 禁用预加载。
 export SOC_VERSION=ascend910_9391
 export COMPILE_CUSTOM_KERNELS=1
 
-# 固定源码版本与 FSDP 修复；更换版本前重新核对上游兼容性。
+# 固定上游源码版本；更换版本前重新核对上游兼容性。
 export VERL_OMNI_REF=14049614953cb92edacc3809dd2a60179d44c394
 export VLLM_REF=v0.30.0
 export VLLM_ASCEND_REF=39fef3f8fe71e71a8b7a684ae0f62b85ff18661f
 export VLLM_OMNI_REF=12e9280010afc41ce5c6a1f46900fc329cf08377
 export VERL_REF=fefb080262e1c015a0ea05f958822a6a512dc795
-export SOURCE_BRANCH=fix/a3-vllm030-env
-export FSDP_FIX_REMOTE_URL=https://github.com/SelfDLer/verl-omni.git
-export FSDP_FIX_BRANCH=fix/fsdp2-async-cpu-offload
-export FSDP_FIX_SHA=c2b4735c178b1d630641f39d27a32f6394cb72f1
 
 # Python 包版本；约束文件和安装命令统一引用这里的配置。
 export TORCH_VERSION=2.10.0+cpu
@@ -85,7 +79,7 @@ export MODEL_PATH=/models/Qwen3-Omni-30B-A3B-Instruct
 export DATA_DIR=/datasets/video_qa
 export TRAIN_FILE="$DATA_DIR/train.parquet"
 export VAL_FILE="$DATA_DIR/validation.parquet"
-export EXPERIMENT_NAME=a3_vllm030_fsdp_fix
+export EXPERIMENT_NAME=a3_vllm030
 export OUTPUT_DIR="$ENV_ROOT/outputs/$EXPERIMENT_NAME"
 export N_GPUS_PER_NODE=16
 export NNODES=2
@@ -224,10 +218,8 @@ install_system_dependencies
 # 已有依赖可以设 skip；不要把“跳过安装”当作“依赖已满足”。
 
 # CANN 的环境脚本可能读取未定义变量，source 前不要 set -u。
-source "$ASCEND_TOOLKIT_ROOT/set_env.sh"
-source "$ATB_ROOT/set_env.sh"
-export PATH="$ASCEND_DRIVER_ROOT/tools:$PATH"
-export LD_LIBRARY_PATH="$ASCEND_DRIVER_ROOT/lib64:$ASCEND_DRIVER_ROOT/lib64/common:$ASCEND_DRIVER_ROOT/lib64/driver:$LOCAL_LIB_DIR:${LD_LIBRARY_PATH:-}"
+source "$ASCEND_ROOT/ascend-toolkit/set_env.sh"
+source "$ASCEND_ROOT/nnal/atb/set_env.sh"
 configure_jemalloc_preload
 check_system_tools() {
   local tool missing=0
@@ -280,17 +272,11 @@ PY
 fi
 # 任一步失败或路径检查未通过时停止本节，不要执行后续安装章节。
 
-# ===== 4. 固定新版 verl-omni，并保留已验证的 FSDP offload 修复 =====
+# ===== 4. 安装固定版本的上游 verl-omni 源码 =====
 git clone https://github.com/verl-project/verl-omni.git "$SRC_DIR/verl-omni"
 cd "$SRC_DIR/verl-omni"
-git switch -c "$SOURCE_BRANCH" "$VERL_OMNI_REF"
-git remote add fork "$FSDP_FIX_REMOTE_URL"
-git fetch fork "$FSDP_FIX_BRANCH"
-# 只在这个新 checkout 应用；不会修改 main、已有 PR 分支，也不会推送。
-# --no-commit 不要求服务器配置 Git 提交身份；工作区保留这份修复 diff。
-git cherry-pick --no-commit "$FSDP_FIX_SHA"
-git diff --cached --stat
-# 如果有冲突，停止安装并保留现场，不要跳过修复继续训练。
+git checkout --detach "$VERL_OMNI_REF"
+# 核对上游声明的配套版本。
 test "$(tr -d '[:space:]' < .github/vllm_ascend_pin.txt)" = "$VLLM_ASCEND_REF"
 test "$(tr -d '[:space:]' < .github/vllm_omni_pin.txt)" = "$VLLM_OMNI_REF"
 test "$(tr -d '[:space:]' < .github/verl_pin.txt)" = "$VERL_REF"
@@ -419,13 +405,11 @@ for name in ('ray', 'transformers', 'accelerate', 'peft', 'TransferQueue',
 from vllm_omni.entrypoints import AsyncOmni
 assert hasattr(AsyncOmni, '_clear_frontend_mm_cache')
 print(inspect.getsource(AsyncOmni._clear_frontend_mm_cache))
-from verl_omni.utils.fsdp_offload import install_fsdp2_cpu_transfer_guard
-print('FSDP guard:', inspect.getfile(install_fsdp2_cpu_transfer_guard))
 from verl_omni.utils.dataset.nextqa_rl_dataset import NextQARLHFDataset
 from qwen_omni_utils import process_mm_info
 print('NExT-QA dataset:', inspect.getfile(NextQARLHFDataset))
 print('media loader:', inspect.getfile(process_mm_info))
-# 仅检查 NPU 基础运行；不是完整训练或 FSDP 回归验证。
+# 仅检查 NPU 基础运行；不是完整训练验证。
 assert torch.ones(4, device='npu').sum().cpu().item() == 4
 print('Basic import/NPU checks passed')
 PY
@@ -434,7 +418,6 @@ for repo in vllm vllm-ascend vllm-omni verl verl-omni; do
   printf '%s ' "$repo"
   git -C "$SRC_DIR/$repo" rev-parse HEAD
 done | tee "$LOG_DIR/source-shas.txt"
-git -C "$SRC_DIR/verl-omni" diff HEAD > "$LOG_DIR/fsdp-fix.diff"
 
 # ===== 11. 数据：已有相同路径的 parquet 和视频时跳过转换 =====
 # MODEL_PATH、DATA_DIR、TRAIN_FILE 和 VAL_FILE 已在第 1 节配置。
@@ -453,10 +436,8 @@ git -C "$SRC_DIR/verl-omni" diff HEAD > "$LOG_DIR/fsdp-fix.diff"
 # 这里只激活已有 Conda 环境，不重复执行第 3 节的创建命令。
 source "$CONDA_ROOT/etc/profile.d/conda.sh"
 conda activate "$ENV_PREFIX"
-source "$ASCEND_TOOLKIT_ROOT/set_env.sh"
-source "$ATB_ROOT/set_env.sh"
-export PATH="$ASCEND_DRIVER_ROOT/tools:$PATH"
-export LD_LIBRARY_PATH="$ASCEND_DRIVER_ROOT/lib64:$ASCEND_DRIVER_ROOT/lib64/common:$ASCEND_DRIVER_ROOT/lib64/driver:$LOCAL_LIB_DIR:${LD_LIBRARY_PATH:-}"
+source "$ASCEND_ROOT/ascend-toolkit/set_env.sh"
+source "$ASCEND_ROOT/nnal/atb/set_env.sh"
 configure_jemalloc_preload
 export OMP_NUM_THREADS="$TRAIN_OMP_NUM_THREADS"
 python -c 'import os, pathlib, sys; assert pathlib.Path(sys.prefix).resolve() == pathlib.Path(os.environ["ENV_PREFIX"]).resolve(); print(sys.executable)'

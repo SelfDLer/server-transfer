@@ -12,6 +12,8 @@
 系统依赖默认自动选择 apt-get、dnf 或 yum，普通用户自动使用 sudo。
 第 1 节可指定 `SYSTEM_PACKAGE_MANAGER=apt/dnf/yum/skip`，并调整对应包列表；
 RPM 系统的音视频软件源需按机器实际情况配置。jemalloc 路径支持自动查找或手动指定。
+Ascend 只配置 `ASCEND_ROOT` 基础路径，再从该路径下加载 Toolkit 和 ATB 的 `set_env.sh`；
+源码按固定上游版本安装。
 
 ## 本地上传
 
