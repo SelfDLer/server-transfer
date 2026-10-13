@@ -9,6 +9,9 @@
 先修改脚本第 1 节的路径、Conda 安装目录、硬件与训练配置，再在 Linux Bash 中逐节执行。
 不要直接整体 `bash` 或 `source` 此文件。环境通过 `conda create -p` 创建；
 新终端运行时执行第 1 节和第 12 节。原有依赖冲突说明仍保留，安装后需要检查实际结果。
+系统依赖默认自动选择 apt-get、dnf 或 yum，普通用户自动使用 sudo。
+第 1 节可指定 `SYSTEM_PACKAGE_MANAGER=apt/dnf/yum/skip`，并调整对应包列表；
+RPM 系统的音视频软件源需按机器实际情况配置。jemalloc 路径支持自动查找或手动指定。
 
 ## 本地上传
 
