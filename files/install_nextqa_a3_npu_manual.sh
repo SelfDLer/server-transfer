@@ -30,7 +30,7 @@ CONDA_PACKAGES=(
   "libgcc-ng>=12" "libstdcxx-ng>=12"
   numactl libnuma rdma-core jemalloc libhiredis
   libxcb libgl libglib xorg-libsm xorg-libxext xorg-libxrender
-  ffmpeg libsndfile sox
+  ffmpeg libsndfile
 )
 # 若已有匹配主机 RDMA/OFED 的用户态库，可从列表移除 rdma-core，使用主机版本。
 # LD_LIBRARY_PATH 默认优先查找环境的 lib；仅在检查仍加载旧 C++ 库时启用预加载。
@@ -100,26 +100,27 @@ export OMP_NUM_THREADS=1
 # 创建成功才激活，避免失败后把包误装到 base 或旧环境。
 # 仅对创建命令优先采用 shell 代理；代理地址不保存到环境或配置文件。
 conda_with_shell_proxy() {
-  "$active_conda_base/bin/python" - "$@" <<'PY'
+  # 使用 -c，避免 spawn/forkserver 子进程尝试重新打开不存在的 <stdin>。
+  "$active_conda_base/bin/python" -c '
 import os
 import sys
 
-proxy_names = ('http_proxy', 'https_proxy', 'all_proxy', 'no_proxy')
-# 小写优先；显式空值也代表 shell 的选择。统一大小写以兼容不同下载后端。
-use_shell_proxy = any(name in os.environ or name.upper() in os.environ for name in proxy_names)
-if use_shell_proxy:
-    for name in proxy_names:
-        value = os.environ.get(name, os.environ.get(name.upper()))
-        if value is not None:
-            os.environ[name] = os.environ[name.upper()] = value
-    from conda.base.context import context
-    # Conda CLI 没有单次清空 proxy_servers 的参数，且空 condarc 会合并旧代理。
-    # 仅在这个独立进程内覆盖配置，让下载后端读取 shell 的代理及 NO_PROXY。
-    context.proxy_servers = {}
+if __name__ == "__main__":
+    proxy_names = ("http_proxy", "https_proxy", "all_proxy", "no_proxy")
+    # 小写优先；显式空值也代表 shell 的选择。统一大小写以兼容不同下载后端。
+    use_shell_proxy = any(name in os.environ or name.upper() in os.environ for name in proxy_names)
+    if use_shell_proxy:
+        for name in proxy_names:
+            value = os.environ.get(name, os.environ.get(name.upper()))
+            if value is not None:
+                os.environ[name] = os.environ[name.upper()] = value
+        from conda.base.context import context
+        # 仅在这个独立进程内覆盖配置，让下载后端读取 shell 的代理及 NO_PROXY。
+        context.proxy_servers = {}
 
-from conda.cli.main import main
-sys.exit(main(*sys.argv[1:]))
-PY
+    from conda.cli.main import main
+    sys.exit(main(*sys.argv[1:]))
+' "$@"
 }
 if ! command -v conda >/dev/null 2>&1; then
   printf '当前 shell 找不到 conda，请先加载你要使用的 Conda，再执行本节。\n' >&2
@@ -347,7 +348,7 @@ deps = [r for r in project['dependencies']
 deps += project['optional-dependencies']['audio']
 # torchvision 0.25 自带视频读取路径；不额外安装与 torch ABI 耦合的 TorchCodec。
 deps += ['librosa>=0.10.2', 'soundfile>=0.13.1', 'av>=14',
-         'qwen-vl-utils>=0.0.14', 'einops>=0.8.1', 'sox>=1.5.0']
+         'qwen-vl-utils>=0.0.14', 'einops>=0.8.1']
 pathlib.Path(os.environ['REQUIREMENTS_FILE']).write_text('\n'.join(deps) + '\n')
 PY
 python -m pip install -r "$REQUIREMENTS_FILE" \

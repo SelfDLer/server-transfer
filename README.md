@@ -22,6 +22,9 @@ Conda 默认使用[清华 conda-forge 镜像](https://mirrors.tuna.tsinghua.edu.
 （也支持小写，小写优先，显式空值同样生效）。只要其中任一变量存在，便在本次 Conda
 进程内清空 `proxy_servers`，由下载后端读取 shell 设置；全部未设置时沿用 Conda 配置。
 代理不写入 `.condarc` 或 `conda env config vars`，不会固定到创建后的环境。
+代理包装使用 `python -c` 和主模块保护，避免多进程启动时重新加载 `<stdin>` 失败。
+默认不安装 SoX 命令行程序及 Python 封装：当前视频问答安装路径不需要它们，
+且本次服务器使用的清华 `linux-aarch64` 源报告缺少 `sox`。以后使用 Qwen3-TTS 时需另行补齐。
 NPU 驱动、固件、CANN/ATB 和内核 RDMA 驱动使用主机安装。
 
 第 3 节从 `ASCEND_ROOT` 加载 Toolkit/ATB 的 `set_env.sh`，然后通过
