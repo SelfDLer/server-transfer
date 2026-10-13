@@ -13,11 +13,35 @@
 安装后检查依赖、模块导入和 NPU 基础运算。原有依赖冲突说明仍保留。
 `SOC_VERSION` 默认留空，由固定版本的 vLLM-Ascend 在构建时通过 `npu-smi` 自动识别；
 识别失败会报错，也可在开头手动填写目标芯片型号。
-系统依赖默认自动选择 apt-get、dnf 或 yum，普通用户自动使用 sudo。
-第 1 节可指定 `SYSTEM_PACKAGE_MANAGER=apt/dnf/yum/skip`，并调整对应包列表；
-RPM 系统的音视频软件源需按机器实际情况配置。
-Ascend 只配置 `ASCEND_ROOT` 基础路径，再从该路径下加载 Toolkit 和 ATB 的 `set_env.sh`；
-源码按固定上游版本安装。
+Git、编译器、构建工具、音视频库、NUMA/RDMA 用户态库和 C++ 运行库优先安装到 Conda。
+第 1 节集中配置 `CONDA_CHANNEL`、编译器版本及 `CONDA_PACKAGES`；源码按固定上游版本安装。
+NPU 驱动、固件、CANN/ATB 和内核 RDMA 驱动使用主机安装。
+
+第 3 节从 `ASCEND_ROOT` 加载 Toolkit/ATB 的 `set_env.sh`，然后通过
+`conda env config vars set -p "$ENV_PREFIX"` 保存 Ascend 变量和库路径。
+`LD_LIBRARY_PATH` 的第一项是当前环境的 `lib`，`PYTHONNOUSERSITE=1` 避免混入用户目录的包。
+Python 包使用 editable 安装，`src/` 必须保留；不会把源码仓库拼进 `PYTHONPATH` 来掩盖安装问题。
+此配置使用 Conda 自身的环境变量管理，正常 `conda activate`/`conda deactivate` 即可应用/恢复变量。
+`PATH` 交给 Conda 管理，不持久化安装终端的完整 PATH。更换 CANN 路径后需重做第 3 节。
+
+查看或修改环境变量：
+
+```bash
+conda env config vars list -p "$ENV_PREFIX"
+conda env config vars set -p "$ENV_PREFIX" "LD_LIBRARY_PATH=$ENV_PREFIX/lib:<其他必要库目录>"
+conda deactivate
+conda activate "$ENV_PREFIX"
+```
+
+已安装的环境可在确认 `libstdcxx-ng` 存在并激活目标环境后，单独执行第 1、3 节更新配置。
+若检测仍加载系统旧的 `libstdc++.so.6`，可设置 `PRELOAD_CONDA_LIBSTDCXX=1` 后重做第 3 节，
+通过该环境的 `LD_PRELOAD` 指定 Conda 库；改回 `0` 并重做第 3 节会清除本脚本保存的预加载设置。
+已运行的 Python/Jupyter 进程需要重启后才会使用新的动态库配置。
+
+第 10 节生成 `$ENV_ROOT/check_environment.py`，在清理相关临时变量后通过 `conda run` 验证，
+直接导入 `verl_omni` 并检查 `/proc/self/maps` 中实际加载的 `libstdc++.so.6`。
+失败的完整 traceback、库路径和导入结果保存在 `$LOG_DIR/import-check.txt`；
+另有 `pip-check.txt`、`pip-freeze.txt` 和 `conda-explicit.txt` 供排查依赖问题。
 
 ## 本地上传
 

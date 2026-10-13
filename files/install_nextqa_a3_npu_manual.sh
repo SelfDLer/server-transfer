@@ -2,7 +2,7 @@
 # Qwen3-Omni / Ascend A3：Conda 环境手动安装与验证清单。
 # 在 Linux Bash 中逐节复制执行；任一步失败时先解决问题，再继续下一节。
 # 适用：Linux / Ascend A3，已安装 CANN 9.1.0、ATB 和 Conda。
-# 系统依赖支持 apt-get、dnf、yum；具体软件包可用性取决于发行版和已配置的仓库。
+# 工具、编译器和用户态库优先安装到 Conda；驱动、固件、CANN/ATB 使用主机安装。
 # 驱动、NPU 设备、CANN 和 ATB 必须已就绪；本文件不安装驱动、CANN 或 Conda。
 # 使用全新的独立环境执行安装。
 
@@ -19,28 +19,22 @@ export PYTHON_VERSION=3.12
 export CONSTRAINTS_FILE="$ENV_ROOT/npu-constraints.txt"
 export REQUIREMENTS_FILE="$ENV_ROOT/environment-requirements.txt"
 
-# 系统依赖安装：auto 自动选择，也可指定 apt/dnf/yum/skip。
-# skip 适用于依赖已由管理员装好的机器；跳过安装后仍需检查工具和 NPU。
-export SYSTEM_PACKAGE_MANAGER=auto
-export SYSTEM_USE_SUDO=auto  # auto：root 直接执行，否则使用 sudo；也可设 yes/no。
-# 包名可按发行版仓库修改。RPM 系统的 ffmpeg 可能需要管理员配置额外软件源；
-# 本清单不自动添加仓库。如果仓库提供 ffmpeg-free，可修改 RPM_MEDIA_PACKAGES。
-APT_SYSTEM_PACKAGES=(
-  git wget curl ca-certificates net-tools gcc g++ cmake make build-essential
-  numactl libnuma-dev libibverbs-dev libjemalloc2 libhiredis-dev
-  libxcb1 libgl1 libglib2.0-0 libsm6 libxext6 libxrender1
-  clang-15 ninja-build ffmpeg libsndfile1 sox unzip
+# Conda 软件源和包列表；先安装全部 Conda 包，再安装下面的 pip 包。
+export CONDA_CHANNEL=conda-forge
+export GCC_VERSION=12
+export CLANG_VERSION=15
+CONDA_PACKAGES=(
+  pip setuptools wheel packaging
+  git wget curl ca-certificates cmake make ninja pkg-config unzip
+  "gcc=$GCC_VERSION" "gxx=$GCC_VERSION" "clang=$CLANG_VERSION" "clangxx=$CLANG_VERSION"
+  "libgcc-ng>=12" "libstdcxx-ng>=12"
+  numactl libnuma rdma-core jemalloc libhiredis
+  libxcb libgl libglib xorg-libsm xorg-libxext xorg-libxrender
+  ffmpeg libsndfile sox
 )
-RPM_SYSTEM_PACKAGES=(
-  git wget curl ca-certificates net-tools gcc gcc-c++ cmake make
-  numactl numactl-devel libibverbs-devel jemalloc hiredis-devel
-  libxcb mesa-libGL glib2 libSM libXext libXrender
-  clang ninja-build libsndfile sox unzip
-)
-RPM_MEDIA_PACKAGES=(ffmpeg)
-# 如需指定编译器，可在这里配置，而不修改系统的全局 alternatives：
-# export CC=clang-15
-# export CXX=clang++-15
+# 若已有匹配主机 RDMA/OFED 的用户态库，可从列表移除 rdma-core，使用主机版本。
+# LD_LIBRARY_PATH 默认优先查找环境的 lib；仅在检查仍加载旧 C++ 库时启用预加载。
+export PRELOAD_CONDA_LIBSTDCXX=0
 
 # Ascend 只配置安装基础路径，从其下的官方 set_env.sh 加载环境。
 # 标准布局：ascend-toolkit/set_env.sh 和 nnal/atb/set_env.sh。
@@ -78,11 +72,8 @@ export MOONCAKE_INDEX_URL=https://mirrors.aliyun.com/pypi/web/simple
 # 安装与构建设置。
 export PIP_DISABLE_PIP_VERSION_CHECK=1
 export PIP_NO_CACHE_DIR=1
-export PYTHONNOUSERSITE=1
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=1
-# 新开终端执行，清除指向旧 editable checkout 的手工 PYTHONPATH。
-unset PYTHONPATH
 
 # ===== 固定版本说明 =====
 #
@@ -101,87 +92,7 @@ unset PYTHONPATH
 # 上述冲突意味着无法承诺 pip check 全绿或首次训练成功；本机仅做静态检查。
 # 不要通过反复 pip install -U 整个栈来消除提示，也不要把 pip check 失败当作通过。
 
-# ===== 2. 系统依赖（自动适配包管理器和 sudo；可单独复制本节执行） =====
-# 请先执行第 1 节。打印系统信息，便于包安装失败时核对发行版。
-if [[ -r /etc/os-release ]]; then cat /etc/os-release; fi
-install_system_dependencies() {
-  local manager="$SYSTEM_PACKAGE_MANAGER" executable
-  local -a privilege=()
-  if [[ "$manager" == skip ]]; then
-    printf '按配置跳过系统依赖安装。\n'
-    return 0
-  fi
-  if [[ "$manager" == auto ]]; then
-    if command -v apt-get >/dev/null 2>&1; then manager=apt
-    elif command -v dnf >/dev/null 2>&1; then manager=dnf
-    elif command -v yum >/dev/null 2>&1; then manager=yum
-    else
-      printf '未找到 apt-get/dnf/yum；请手动安装依赖，再设 SYSTEM_PACKAGE_MANAGER=skip。\n' >&2
-      return 1
-    fi
-  fi
-  case "$manager" in
-    apt|apt-get) executable=apt-get ;;
-    dnf|yum) executable="$manager" ;;
-    *) printf '不支持的 SYSTEM_PACKAGE_MANAGER：%s\n' "$manager" >&2; return 1 ;;
-  esac
-  if ! command -v "$executable" >/dev/null 2>&1; then
-    printf '指定的包管理器不可用：%s\n' "$executable" >&2
-    return 1
-  fi
-  case "$SYSTEM_USE_SUDO" in
-    auto) if (( EUID != 0 )); then privilege=(sudo); fi ;;
-    yes) privilege=(sudo) ;;
-    no) ;;
-    *) printf 'SYSTEM_USE_SUDO 只能是 auto/yes/no。\n' >&2; return 1 ;;
-  esac
-  if (( ${#privilege[@]} )) && ! command -v sudo >/dev/null 2>&1; then
-    printf '需要 sudo，但未找到 sudo 命令；请管理员安装依赖或使用 skip。\n' >&2
-    return 1
-  fi
-  printf '系统包管理器：%s；权限方式：%s\n' "$executable" "${privilege[*]:-直接执行}"
-  if [[ "$executable" == apt-get ]]; then
-    "${privilege[@]}" apt-get update &&
-      "${privilege[@]}" apt-get install -y --no-install-recommends "${APT_SYSTEM_PACKAGES[@]}" || return 1
-  else
-    "${privilege[@]}" "$executable" install -y "${RPM_SYSTEM_PACKAGES[@]}" || return 1
-    if (( ${#RPM_MEDIA_PACKAGES[@]} )); then
-      if ! "${privilege[@]}" "$executable" install -y "${RPM_MEDIA_PACKAGES[@]}"; then
-        printf '音视频包安装失败：请检查软件源/包名，修改 RPM_MEDIA_PACKAGES 后重试。\n' >&2
-        return 1
-      fi
-    fi
-  fi
-}
-install_system_dependencies
-# 上一条失败时停止本节，先调整包名、软件源或权限；不要继续安装后面的 Python 包。
-# 已有依赖可以设 skip；不要把“跳过安装”当作“依赖已满足”。
-
-# CANN 的环境脚本可能读取未定义变量，source 前不要 set -u。
-source "$ASCEND_ROOT/ascend-toolkit/set_env.sh"
-source "$ASCEND_ROOT/nnal/atb/set_env.sh"
-check_system_tools() {
-  local tool missing=0
-  for tool in git gcc g++ cmake make ninja ffmpeg ffprobe; do
-    if ! command -v "$tool" >/dev/null 2>&1; then
-      printf '缺少工具：%s，请先安装。\n' "$tool" >&2
-      missing=1
-    fi
-  done
-  if ! command -v clang-15 >/dev/null 2>&1 && ! command -v clang >/dev/null 2>&1; then
-    printf '缺少 Clang：请按系统软件源安装，或调整编译器配置。\n' >&2
-    missing=1
-  fi
-  return "$missing"
-}
-check_system_tools
-# 任一检查失败时先补齐。安装成功也不能代替下面的 NPU/CANN 检查。
-npu-smi info
-ffmpeg -version
-ffprobe -version
-# 在这里确认 CANN 为 9.1.0，且 NPU/ATB 可用，再往下执行；Python 由 Conda 安装。
-
-# ===== 3. 用 Conda 按绝对路径创建独立环境（不复用旧训练环境） =====
+# ===== 2. 用 Conda 按绝对路径创建独立环境（不复用旧训练环境） =====
 # 使用当前 shell 中的 conda，自动查询其安装根目录并加载同一套初始化脚本。
 # conda info --base 查看 Conda 本体目录；echo "$CONDA_PREFIX" 查看当前激活环境目录。
 # 如当前在旧训练环境，先 conda deactivate，再执行本节。
@@ -202,10 +113,11 @@ else
   source "$active_conda_base/etc/profile.d/conda.sh" &&
   conda --version &&
   mkdir -p "$SRC_DIR" "$LOG_DIR" &&
-  conda create -y -p "$ENV_PREFIX" "python=$PYTHON_VERSION" pip &&
+  conda create -y -p "$ENV_PREFIX" --override-channels -c "$CONDA_CHANNEL" \
+    --strict-channel-priority "python=$PYTHON_VERSION" "${CONDA_PACKAGES[@]}" &&
   conda activate "$ENV_PREFIX" &&
 # 确认 Python 确实来自指定 prefix 且版本正确，通过后才执行 pip 安装。
-  python - <<'PY' && python -m pip install --upgrade pip setuptools wheel packaging
+  python - <<'PY'
 import os
 import pathlib
 import sys
@@ -216,6 +128,114 @@ print(sys.executable)
 PY
 fi
 # 任一步失败或路径检查未通过时停止本节，不要执行后续安装章节。
+
+# ===== 3. 将 Ascend 和动态库路径保存到 Conda 环境 =====
+# 在子 shell 中 source，避免把安装时的临时变量留在外层 shell。
+# 使用 conda env config vars 管理持久变量；无需 activate.d/deactivate.d 钩子。
+# CANN 安装路径发生变化后，重新执行本节并重新激活环境。
+configure_conda_environment() (
+  set -e
+  if [[ "${CONDA_PREFIX:-}" != "$ENV_PREFIX" ]]; then
+    printf '请先 conda activate "%s"，当前环境不匹配。\n' "$ENV_PREFIX" >&2
+    return 1
+  fi
+  # 清除旧源码路径，再由官方脚本设置 CANN 自身需要的 Python 路径。
+  unset PYTHONPATH
+  # CANN 环境脚本可能读取未定义变量，此处不要启用 set -u。
+  source "$ASCEND_ROOT/ascend-toolkit/set_env.sh" || return 1
+  source "$ASCEND_ROOT/nnal/atb/set_env.sh" || return 1
+  python - <<'PY'
+import json
+import os
+import pathlib
+import subprocess
+
+prefix = pathlib.Path(os.environ['ENV_PREFIX']).resolve()
+cxx_library = prefix / 'lib/libstdc++.so.6'
+if not cxx_library.is_file():
+    raise SystemExit(f'缺少 {cxx_library}，先安装 Conda 的 libstdcxx-ng。')
+
+def prepend_path(first, previous):
+    # 去重并去掉空项，避免空路径项意外指向当前工作目录。
+    return ':'.join(dict.fromkeys([str(p) for p in first] + [p for p in previous.split(':') if p]))
+
+# 保存官方 setup 导出的 Ascend 变量，不保存 pip 镜像等安装专用配置。
+settings = {
+    key: value for key, value in os.environ.items()
+    if key.startswith(('ASCEND_', 'ATB_', 'CANN_', 'TBE_', 'TOOLCHAIN_'))
+    and key != 'ASCEND_PIP_INDEX_URL'
+}
+settings.update({
+    'LD_LIBRARY_PATH': prepend_path([prefix / 'lib'], os.environ.get('LD_LIBRARY_PATH', '')),
+    'LIBRARY_PATH': prepend_path([prefix / 'lib'], os.environ.get('LIBRARY_PATH', '')),
+    'CMAKE_PREFIX_PATH': prepend_path([prefix], os.environ.get('CMAKE_PREFIX_PATH', '')),
+    'PKG_CONFIG_PATH': prepend_path([prefix / 'lib/pkgconfig', prefix / 'share/pkgconfig'],
+                                    os.environ.get('PKG_CONFIG_PATH', '')),
+    'PYTHONPATH': os.environ.get('PYTHONPATH', ''),
+    'PYTHONNOUSERSITE': '1',
+    'ENV_ROOT': os.environ['ENV_ROOT'],
+    'SRC_DIR': os.environ['SRC_DIR'],
+    'LOG_DIR': os.environ['LOG_DIR'],
+})
+preload = os.environ.get('PRELOAD_CONDA_LIBSTDCXX', '0')
+if preload not in ('0', '1'):
+    raise SystemExit('PRELOAD_CONDA_LIBSTDCXX 必须为 0 或 1。')
+if preload == '1':
+    other_preloads = [p for p in os.environ.get('LD_PRELOAD', '').replace(':', ' ').split()
+                     if 'libstdc++' not in p]
+    settings['LD_PRELOAD'] = ':'.join([str(cxx_library), *other_preloads])
+
+conda = os.environ['CONDA_EXE']
+record = pathlib.Path(os.environ['ENV_ROOT']) / 'conda-env-vars.json'
+# 关闭本脚本以前开启的预加载时，清除本脚本管理的旧设置。
+previous = json.loads(record.read_text()) if record.exists() else {}
+if preload == '0' and 'LD_PRELOAD' in previous:
+    subprocess.run([conda, 'env', 'config', 'vars', 'unset', '-p', str(prefix), 'LD_PRELOAD'], check=True)
+subprocess.run([conda, 'env', 'config', 'vars', 'set', '-p', str(prefix),
+                *[f'{key}={value}' for key, value in sorted(settings.items())]], check=True)
+record.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + '\n')
+print('Conda 环境变量已保存：', record)
+print('LD_LIBRARY_PATH:', settings['LD_LIBRARY_PATH'])
+PY
+)
+configure_conda_environment && conda deactivate && conda activate "$ENV_PREFIX"
+# 上一步失败时先处理，不要继续。重新激活后才会应用持久变量。
+conda env config vars list -p "$ENV_PREFIX"
+
+# PATH 由 Conda 管理，不将安装时的完整 PATH 固定在环境配置中。
+# 编译需要 CANN 工具时，加载 PATH 后再次应用 Conda 变量以维持 libstdc++ 的优先级。
+source "$ASCEND_ROOT/ascend-toolkit/set_env.sh"
+source "$ASCEND_ROOT/nnal/atb/set_env.sh"
+conda deactivate && conda activate "$ENV_PREFIX"
+
+check_environment_tools() {
+  local tool missing=0
+  for tool in git gcc g++ clang cmake make ninja pkg-config ffmpeg ffprobe; do
+    if ! command -v "$tool"; then missing=1; fi
+  done
+  return "$missing"
+}
+check_environment_tools
+npu-smi info
+ffmpeg -version
+ffprobe -version
+# CANN、ATB、NPU 驱动和内核 RDMA 驱动必须已在主机上可用。
+
+# 在独立 Python 进程中检查动态链接器实际选择的 C++ 库。
+python - <<'PY'
+import ctypes
+import os
+import pathlib
+ctypes.CDLL('libstdc++.so.6')
+expected = (pathlib.Path(os.environ['CONDA_PREFIX']) / 'lib/libstdc++.so.6').resolve()
+loaded = {pathlib.Path(line.split(maxsplit=5)[-1].removesuffix(' (deleted)')).resolve()
+          for line in pathlib.Path('/proc/self/maps').read_text().splitlines()
+          if '/libstdc++.so.6' in line}
+print('Loaded libstdc++:', *sorted(map(str, loaded)), sep='\n')
+assert loaded == {expected}, (
+    '未使用 Conda C++ 库；检查 LD_PRELOAD/RPATH，必要时设置 PRELOAD_CONDA_LIBSTDCXX=1 后重做第 3 节',
+    loaded, expected)
+PY
 
 # ===== 4. 安装固定版本的上游 verl-omni 源码 =====
 git clone https://github.com/verl-project/verl-omni.git "$SRC_DIR/verl-omni"
@@ -320,24 +340,55 @@ python -m pip install --upgrade onnxruntime -c "$CONSTRAINTS_FILE"
 # 安装日志如出现其他依赖冲突，先记录并处理。
 
 # ===== 10. 安装检查 =====
+conda list -p "$ENV_PREFIX" --explicit > "$LOG_DIR/conda-explicit.txt"
 python -m pip freeze > "$LOG_DIR/pip-freeze.txt"
 python -m pip check > "$LOG_DIR/pip-check.txt" 2>&1
 # 上一条的退出码非零表示检查失败；文件开头列出的冲突可能出现在这里。
 cat "$LOG_DIR/pip-check.txt"
-python - <<'PY' | tee "$LOG_DIR/import-check.txt"
+cat > "$ENV_ROOT/check_environment.py" <<'PY'
 import importlib
 import os
 import pathlib
 import sys
+import traceback
 from importlib.metadata import version
+
+print('python:', sys.executable)
+print('prefix:', sys.prefix)
+print('LD_LIBRARY_PATH:', os.environ.get('LD_LIBRARY_PATH', ''))
+print('LD_PRELOAD:', os.environ.get('LD_PRELOAD', ''))
+print('PYTHONPATH:', os.environ.get('PYTHONPATH', ''))
+print('ASCEND_HOME_PATH:', os.environ.get('ASCEND_HOME_PATH', ''))
+print('ATB_HOME_PATH:', os.environ.get('ATB_HOME_PATH', ''))
+prefix = pathlib.Path(sys.prefix).resolve()
+expected_cxx = (prefix / 'lib/libstdc++.so.6').resolve()
+
+def report_cxx_library():
+    loaded = {pathlib.Path(line.split(maxsplit=5)[-1].removesuffix(' (deleted)')).resolve()
+              for line in pathlib.Path('/proc/self/maps').read_text().splitlines()
+              if '/libstdc++.so.6' in line}
+    print('Loaded libstdc++:', *sorted(map(str, loaded)), sep='\n')
+    return loaded
+
+# 首先直接导入 verl_omni，避免提前导入 torch 或用 ctypes 预载正确库后掩盖问题。
+try:
+    import verl_omni
+except Exception:
+    traceback.print_exc()
+    report_cxx_library()
+    raise SystemExit(1)
+assert report_cxx_library() == {expected_cxx}, '实际加载的 libstdc++ 不属于当前 Conda 环境'
+assert os.environ.get('PYTHONNOUSERSITE') == '1', 'Conda 持久变量未生效'
+
 import torch
 import torch_npu
-print('python:', sys.executable)
 print('torch:', torch.__version__, torch.__file__, 'git:', torch.version.git_version)
 print('NPU available:', torch.npu.is_available(), 'count:', torch.npu.device_count())
-assert torch.__version__ == os.environ['TORCH_VERSION']
-assert version('torch-npu') == os.environ['TORCH_NPU_VERSION']
-assert version('transformers') == os.environ['TRANSFORMERS_VERSION']
+# 从安装清单执行时核对配置版本；以后单独运行也能进行基础导入/动态库检查。
+for package, key in (('torch', 'TORCH_VERSION'), ('torch-npu', 'TORCH_NPU_VERSION'),
+                     ('transformers', 'TRANSFORMERS_VERSION')):
+    if os.environ.get(key):
+        assert version(package) == os.environ[key], (package, version(package), os.environ[key])
 assert torch.npu.is_available()
 root = pathlib.Path(os.environ['SRC_DIR']).resolve()
 for name in ('vllm', 'vllm_ascend', 'vllm_omni', 'verl', 'verl_omni'):
@@ -351,6 +402,30 @@ for name in ('ray', 'transformers', 'accelerate', 'peft', 'TransferQueue',
 # 仅检查 NPU 基础运行；不是完整训练验证。
 assert torch.ones(4, device='npu').sum().cpu().item() == 4
 print('Basic import/NPU checks passed')
+PY
+
+# 清除父进程中保存的这些变量，再通过 conda run 激活并运行新的 Python 进程，
+# 验证导入依赖的是 Conda 持久配置，而不是安装终端临时 source 的结果。
+python - <<'PY' 2>&1 | tee "$LOG_DIR/import-check.txt"
+import json
+import os
+import pathlib
+import subprocess
+import sys
+root = pathlib.Path(os.environ['ENV_ROOT'])
+settings = json.loads((root / 'conda-env-vars.json').read_text())
+clean_env = dict(os.environ)
+for name in settings:
+    clean_env.pop(name, None)
+# 避免同一 prefix 被 Conda 当作 reactivate，部分版本不会重新读取 config vars。
+for name in list(clean_env):
+    if name.startswith(('CONDA_PREFIX', '__CONDA_SHLVL_')) or name in ('CONDA_DEFAULT_ENV', 'CONDA_PROMPT_MODIFIER'):
+        clean_env.pop(name)
+clean_env['CONDA_SHLVL'] = '0'
+result = subprocess.run([os.environ['CONDA_EXE'], 'run', '-p', os.environ['ENV_PREFIX'],
+                         '--no-capture-output', 'python', '-u', str(root / 'check_environment.py')],
+                        env=clean_env, cwd=root)
+sys.exit(result.returncode)
 PY
 # 检查输出与退出状态；出现 import/ABI/API 错误时先解决安装问题。
 for repo in vllm vllm-ascend vllm-omni verl verl-omni; do
