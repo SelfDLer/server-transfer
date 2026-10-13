@@ -72,7 +72,7 @@ export PYTORCH_CPU_INDEX_URL=https://download.pytorch.org/whl/cpu/
 export MOONCAKE_INDEX_URL=https://mirrors.aliyun.com/pypi/web/simple
 # pip 对这些域名跳过证书验证；空格分隔，仅填写主机名（可带端口）。
 # 覆盖 torch、torch-npu 及其他依赖的安装；更换下载源时同步更新。
-export PIP_TRUSTED_HOST="download.pytorch.org mirrors.huaweicloud.com mirrors.tuna.tsinghua.edu.cn mirrors.aliyun.com"
+export PIP_TRUSTED_HOST="download.pytorch.org download-r2.pytorch.org mirrors.huaweicloud.com mirrors.tuna.tsinghua.edu.cn mirrors.aliyun.com"
 
 # 安装与构建设置。
 export PIP_DISABLE_PIP_VERSION_CHECK=1
