@@ -267,8 +267,33 @@ PY
 
 # ===== 4. 检查自有 verl-omni 源码 =====
 check_verl_omni_source() (
-  if [[ "$VERL_OMNI_DIR" != /* || ! -f "$VERL_OMNI_DIR/pyproject.toml" || ! -d "$VERL_OMNI_DIR/verl_omni" ]]; then
-    printf '请将 VERL_OMNI_DIR 设为已有 verl-omni 项目的绝对路径：%s\n' "$VERL_OMNI_DIR" >&2
+  printf '检查 VERL_OMNI_DIR=%q\n' "${VERL_OMNI_DIR:-}"
+  if [[ -z "${VERL_OMNI_DIR:-}" ]]; then
+    printf 'VERL_OMNI_DIR 未设置，请先执行第 1 节。\n' >&2
+    return 1
+  fi
+  if [[ "$VERL_OMNI_DIR" != /* ]]; then
+    printf 'VERL_OMNI_DIR 不是绝对路径：%q\n' "$VERL_OMNI_DIR" >&2
+    return 1
+  fi
+  if [[ "$VERL_OMNI_DIR" == *$'\r'* || "$VERL_OMNI_DIR" == *$'\n'* ]]; then
+    printf 'VERL_OMNI_DIR 含回车或换行，请重新输入路径：%q\n' "$VERL_OMNI_DIR" >&2
+    return 1
+  fi
+  if [[ ! -d "$VERL_OMNI_DIR" ]]; then
+    printf '目录不存在、符号链接失效，或当前用户无法访问：%q\n' "$VERL_OMNI_DIR" >&2
+    return 1
+  fi
+  if [[ ! -f "$VERL_OMNI_DIR/pyproject.toml" ]]; then
+    printf '目录可见，但缺少 pyproject.toml；请指定项目根目录：%q\n' "$VERL_OMNI_DIR" >&2
+    return 1
+  fi
+  if [[ ! -r "$VERL_OMNI_DIR/pyproject.toml" ]]; then
+    printf 'pyproject.toml 不可读取，请检查权限：%q\n' "$VERL_OMNI_DIR/pyproject.toml" >&2
+    return 1
+  fi
+  if [[ ! -d "$VERL_OMNI_DIR/verl_omni" && ! -d "$VERL_OMNI_DIR/src/verl_omni" ]]; then
+    printf '缺少 Python 包目录 verl_omni/ 或 src/verl_omni/，请核对源码内容：%q\n' "$VERL_OMNI_DIR" >&2
     return 1
   fi
   cd "$VERL_OMNI_DIR" || return 1
