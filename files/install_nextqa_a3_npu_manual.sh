@@ -70,6 +70,9 @@ export PIP_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 export ASCEND_PIP_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi
 export PYTORCH_CPU_INDEX_URL=https://download.pytorch.org/whl/cpu/
 export MOONCAKE_INDEX_URL=https://mirrors.aliyun.com/pypi/web/simple
+# pip 对这些域名跳过证书验证；空格分隔，仅填写主机名（可带端口）。
+# 覆盖 torch、torch-npu 及其他依赖的安装；更换下载源时同步更新。
+export PIP_TRUSTED_HOST="download.pytorch.org mirrors.huaweicloud.com mirrors.tuna.tsinghua.edu.cn mirrors.aliyun.com"
 
 # 安装与构建设置。
 export PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -200,6 +203,7 @@ settings.update({
                                     os.environ.get('PKG_CONFIG_PATH', '')),
     'PYTHONPATH': os.environ.get('PYTHONPATH', ''),
     'PYTHONNOUSERSITE': '1',
+    'PIP_TRUSTED_HOST': os.environ['PIP_TRUSTED_HOST'],
     'ENV_ROOT': os.environ['ENV_ROOT'],
     'SRC_DIR': os.environ['SRC_DIR'],
     'VERL_OMNI_DIR': os.environ['VERL_OMNI_DIR'],

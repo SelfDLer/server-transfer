@@ -22,6 +22,10 @@ verl-omni 从该目录做 editable 安装，保留现有分支、提交和本地
 Conda 默认使用[清华 conda-forge 镜像](https://mirrors.tuna.tsinghua.edu.cn/help/anaconda/)，
 创建环境时通过 [`--insecure`](https://docs.conda.io/projects/conda/en/latest/commands/create.html)
 跳过 TLS 证书验证，仅作用于该次创建命令。
+pip 的 [`PIP_TRUSTED_HOST`](https://pip.pypa.io/en/stable/cli/pip/#cmdoption-trusted-host)
+在第 1 节集中配置，默认覆盖 PyTorch、华为 Ascend、清华和阿里镜像域名，对这些域名跳过证书验证。
+所有 pip 安装命令（包括 torch 和 torch-npu）共用此设置，第 3 节通过 `conda env config vars` 保存。
+更换镜像或遇到下载重定向到其他域名时，按实际下载地址调整列表，多个主机名用空格分隔。
 创建命令优先采用当前 shell 的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 和 `NO_PROXY`
 （也支持小写，小写优先，显式空值同样生效）。只要其中任一变量存在，便在本次 Conda
 进程内清空 `proxy_servers`，由下载后端读取 shell 设置；全部未设置时沿用 Conda 配置。
