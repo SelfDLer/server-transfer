@@ -9,20 +9,29 @@
 # ===== 1. 集中配置（换机器、目录或环境时先修改本节） =====
 set -o pipefail
 
-# 环境与源码目录；Conda 使用绝对路径 prefix，不使用环境名称。
-export ENV_ROOT=/workspace/a3-vllm030
+# 常用本地目录调整
+export ENV_ROOT=/path/to/your/env-root
+export VERL_OMNI_DIR=/path/to/your/verl-omni
+export ASCEND_ROOT=/usr/local/Ascend/ascend-toolkit
+
+# 基础目录
 export SRC_DIR="$ENV_ROOT/src"
-# 已有 verl-omni 源码的绝对路径；安装时保留其分支、提交和本地修改。
-export VERL_OMNI_DIR="/path/to/your/verl-omni"
 export ENV_PREFIX="$ENV_ROOT/conda"
 export LOG_DIR="$ENV_ROOT/logs"
-# 使用当前 shell 中的 conda；运行 conda info --base 可查看它的安装根目录。
 export PYTHON_VERSION=3.12
 export CONSTRAINTS_FILE="$ENV_ROOT/npu-constraints.txt"
 export REQUIREMENTS_FILE="$ENV_ROOT/environment-requirements.txt"
 
-# Conda 软件源和包列表；先安装全部 Conda 包，再安装下面的 pip 包。
+# 网络配置
 export CONDA_CHANNEL=https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
+export PIP_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+export ASCEND_PIP_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi
+export HUAWEI_PIP_INDEX_URL=https://mirrors.huaweicloud.com/repository/pypi/simple
+export PYTORCH_CPU_INDEX_URL=https://mirror.sjtu.edu.cn/pytorch-wheels/cpu/
+export MOONCAKE_INDEX_URL=https://mirrors.aliyun.com/pypi/web/simple
+export PIP_TRUSTED_HOST="mirror.sjtu.edu.cn s3.jcloud.sjtu.edu.cn download.pytorch.org download-r2.pytorch.org mirrors.huaweicloud.com mirrors.tuna.tsinghua.edu.cn mirrors.aliyun.com ascend.devcloud.huaweicloud.com"
+
+# 基础组件
 export GCC_VERSION=12
 export CLANG_VERSION=15
 CONDA_PACKAGES=(
@@ -34,20 +43,12 @@ CONDA_PACKAGES=(
   libxcb libgl libglib xorg-libsm xorg-libxext xorg-libxrender
   ffmpeg libsndfile
 )
-# 若已有匹配主机 RDMA/OFED 的用户态库，可从列表移除 rdma-core，使用主机版本。
-# LD_LIBRARY_PATH 默认优先查找环境的 lib；仅在检查仍加载旧 C++ 库时启用预加载。
 export PRELOAD_CONDA_LIBSTDCXX=0
-
-# Ascend 只配置安装基础路径，从其下的官方 set_env.sh 加载环境。
-# 指向 Toolkit 目录：set_env.sh 和 ../nnal/atb/set_env.sh。
-export ASCEND_ROOT=/usr/local/Ascend/ascend-toolkit
-# 留空时，固定版本的 vLLM-Ascend setup.py 通过 npu-smi 自动识别芯片。
-# 无可见 NPU 或识别失败时，可手动填入目标型号，例如 ascend910_9391。
 export SOC_VERSION=""
 export COMPILE_CUSTOM_KERNELS=1
 
 # 固定上游源码版本；更换版本前重新核对上游兼容性。
-# verl-omni 使用 VERL_OMNI_DIR 中的现有版本，其余源码固定如下。
+# 源码版本。
 export VLLM_REF=v0.30.0
 export VLLM_ASCEND_REF=39fef3f8fe71e71a8b7a684ae0f62b85ff18661f
 export VLLM_OMNI_REF=12e9280010afc41ce5c6a1f46900fc329cf08377
@@ -65,48 +66,15 @@ export RAY_VERSION=2.56.1
 export TRITON_ASCEND_VERSION=3.2.2
 export MOONCAKE_VERSION=0.3.11.post1
 
-# 下载源。
-export PIP_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-export ASCEND_PIP_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi
-export HUAWEI_PIP_INDEX_URL=https://mirrors.huaweicloud.com/repository/pypi/simple
-export PYTORCH_CPU_INDEX_URL=https://mirror.sjtu.edu.cn/pytorch-wheels/cpu/
-export MOONCAKE_INDEX_URL=https://mirrors.aliyun.com/pypi/web/simple
-# pip 对这些域名跳过证书验证；空格分隔，仅填写主机名（可带端口）。
-# 覆盖 torch、torch-npu 及其他依赖的安装；更换下载源时同步更新。
-export PIP_TRUSTED_HOST="mirror.sjtu.edu.cn s3.jcloud.sjtu.edu.cn download.pytorch.org download-r2.pytorch.org mirrors.huaweicloud.com mirrors.tuna.tsinghua.edu.cn mirrors.aliyun.com ascend.devcloud.huaweicloud.com"
-
 # 安装与构建设置。
 export PIP_DISABLE_PIP_VERSION_CHECK=1
 export PIP_NO_CACHE_DIR=1
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=1
 
-# ===== 固定版本说明 =====
-#
-# 查询时官方 main：14049614953cb92edacc3809dd2a60179d44c394
-# 以下兼容性说明以此 SHA 为基准；自有 verl-omni 版本变化时需重新核对依赖。
-# 依据：
-# https://github.com/verl-project/verl-omni/blob/14049614953cb92edacc3809dd2a60179d44c394/pyproject.toml
-#
-# 已确认的上游依赖声明冲突（不是已经通过验证的全量 lockfile）：
-# - verl 固定版本要求 transformers<5.11；verl-omni 要求 >=5.13,<=5.14.1；
-#   vllm-ascend 固定版本要求 transformers==5.14.1。最终按后两者对齐。
-# - vllm-omni 固定版本要求 accelerate==1.12.0；verl-omni 要求 >=1.14.0。
-#   最终按 verl-omni 的最低版本 1.14.0 对齐；保留 pip check 的冲突报告。
-# - vllm 0.30 要求 fastapi>=0.133,<0.137，vllm-ascend 固定版本要求 <0.124。
-#   本清单保留原有安装顺序，安装后检查实际结果。
-# 上述冲突意味着无法承诺 pip check 全绿或首次训练成功；本机仅做静态检查。
-# 不要通过反复 pip install -U 整个栈来消除提示，也不要把 pip check 失败当作通过。
 
-# ===== 2. 用 Conda 按绝对路径创建独立环境（不复用旧训练环境） =====
-# 使用当前 shell 中的 conda，自动查询其安装根目录并加载同一套初始化脚本。
-# conda info --base 查看 Conda 本体目录；echo "$CONDA_PREFIX" 查看当前激活环境目录。
-# 如当前在旧训练环境，先 conda deactivate，再执行本节。
-# 目标 prefix 已存在时不创建也不激活；修改第 1 节的路径后重新执行本节。
-# 创建成功才激活，避免失败后把包误装到 base 或旧环境。
-# 仅对创建命令优先采用 shell 代理；代理地址不保存到环境或配置文件。
+# ===== 2. 用 Conda 按绝对路径创建独立环境 =====
 conda_with_shell_proxy() {
-  # 使用 -c，避免 spawn/forkserver 子进程尝试重新打开不存在的 <stdin>。
   "$active_conda_base/bin/python" -c '
 import os
 import sys
@@ -143,11 +111,9 @@ else
   source "$active_conda_base/etc/profile.d/conda.sh" &&
   conda --version &&
   mkdir -p "$SRC_DIR" "$LOG_DIR" &&
-  # --insecure 仅对本次创建跳过 TLS 证书验证。
   conda_with_shell_proxy create -y --insecure -p "$ENV_PREFIX" --override-channels -c "$CONDA_CHANNEL" \
     --strict-channel-priority "python=$PYTHON_VERSION" "${CONDA_PACKAGES[@]}" &&
   conda activate "$ENV_PREFIX" &&
-# 确认 Python 确实来自指定 prefix 且版本正确，通过后才执行 pip 安装。
   python - <<'PY'
 import os
 import pathlib
@@ -161,18 +127,13 @@ fi
 # 任一步失败或路径检查未通过时停止本节，不要执行后续安装章节。
 
 # ===== 3. 将 Ascend 和动态库路径保存到 Conda 环境 =====
-# 在子 shell 中 source，避免把安装时的临时变量留在外层 shell。
-# 使用 conda env config vars 管理持久变量；无需 activate.d/deactivate.d 钩子。
-# CANN 安装路径发生变化后，重新执行本节并重新激活环境。
 configure_conda_environment() (
   set -e
   if [[ "${CONDA_PREFIX:-}" != "$ENV_PREFIX" ]]; then
     printf '请先 conda activate "%s"，当前环境不匹配。\n' "$ENV_PREFIX" >&2
     return 1
   fi
-  # 清除旧源码路径，再由官方脚本设置 CANN 自身需要的 Python 路径。
   unset PYTHONPATH
-  # CANN 环境脚本可能读取未定义变量，此处不要启用 set -u。
   source "$ASCEND_ROOT/set_env.sh" || return 1
   source "$ASCEND_ROOT/../nnal/atb/set_env.sh" || return 1
   python - <<'PY'
@@ -235,8 +196,6 @@ configure_conda_environment && conda deactivate && conda activate "$ENV_PREFIX"
 # 上一步失败时先处理，不要继续。重新激活后才会应用持久变量。
 conda env config vars list -p "$ENV_PREFIX"
 
-# PATH 由 Conda 管理，不将安装时的完整 PATH 固定在环境配置中。
-# 编译需要 CANN 工具时，加载 PATH 后再次应用 Conda 变量以维持 libstdc++ 的优先级。
 source "$ASCEND_ROOT/set_env.sh"
 source "$ASCEND_ROOT/../nnal/atb/set_env.sh"
 conda deactivate && conda activate "$ENV_PREFIX"
@@ -320,8 +279,6 @@ check_verl_omni_source
 
 # ===== 5. 基础 Python / PyTorch / 通信依赖 =====
 python -m pip install modelscope "ray[default]==$RAY_VERSION" 'protobuf>3.20.0'
-python -m pip install "mooncake-transfer-engine-npu==$MOONCAKE_VERSION" \
-  --extra-index-url "$MOONCAKE_INDEX_URL"
 python -m pip install --force-reinstall \
   "torch==$TORCH_VERSION" "torchvision==$TORCHVISION_VERSION" "torchaudio==$TORCHAUDIO_VERSION" \
   --index-url "$PYTORCH_CPU_INDEX_URL"
@@ -331,7 +288,6 @@ python -m pip install "torch-npu==$TORCH_NPU_VERSION" \
 # ===== 6. vLLM 0.30：NPU 路径使用 empty target，不安装 CUDA vLLM wheel =====
 git clone --depth 1 --branch "$VLLM_REF" https://github.com/vllm-project/vllm.git "$SRC_DIR/vllm"
 cd "$SRC_DIR/vllm"
-# regex 是普通 PyPI 依赖；先从通用源安装并验证，再安装 vLLM。
 python -m pip install regex --index-url "$HUAWEI_PIP_INDEX_URL" &&
 python -c 'import regex; print(regex.__version__, regex.__file__)' &&
 VLLM_TARGET_DEVICE=empty python -m pip install -e '.[audio]' \
@@ -344,9 +300,6 @@ git clone https://github.com/vllm-project/vllm-ascend.git "$SRC_DIR/vllm-ascend"
 cd "$SRC_DIR/vllm-ascend"
 git checkout --detach "$VLLM_ASCEND_REF"
 git submodule update --init --recursive
-# SOC_VERSION 为空时由此版本 setup.py 调用 npu-smi 识别，不传入字面值 auto。
-# 识别失败则安装报错；检查 NPU/驱动可见性，或在第 1 节手动指定型号后重试。
-# 仅为这一条构建命令设置，避免影响后续训练环境。
 VLLM_BATCH_INVARIANT=1 PIP_EXTRA_INDEX_URL="$ASCEND_PIP_INDEX_URL" \
   python -m pip install -e . \
   --extra-index-url "$ASCEND_PIP_INDEX_URL" --extra-index-url "$PYTORCH_CPU_INDEX_URL"
