@@ -292,8 +292,6 @@ python -m pip install regex --index-url "$HUAWEI_PIP_INDEX_URL" &&
 python -c 'import regex; print(regex.__version__, regex.__file__)' &&
 VLLM_TARGET_DEVICE=empty python -m pip install -e '.[audio]' \
   --index-url "$HUAWEI_PIP_INDEX_URL" --extra-index-url "$PYTORCH_CPU_INDEX_URL"
-# 安装失败时先处理报错，不要继续后面的卸载和安装步骤。
-python -m pip uninstall -y triton
 
 # ===== 7. vLLM-Ascend：自动识别芯片并构建自定义算子 =====
 git clone https://github.com/vllm-project/vllm-ascend.git "$SRC_DIR/vllm-ascend"
