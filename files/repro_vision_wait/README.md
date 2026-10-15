@@ -48,6 +48,13 @@ NPU 后端可能调整请求的配置；以 `worker-state-*.jsonl` 中模型加�
 `returned` 表示函数返回，不保证设备任务完成。warmup 包含不止图捕获一个步骤。
 只有 engine_init_done 之后的 request_begin 才属于用户请求，初始化也可能执行视觉 dummy 输入。
 
+如果 `request_begin` 后没有 `request_done` 就出现 `engine_close_begin`，先检查
+`inference-error.txt` 和 `inference_error`/`interrupted` 记录，不能直接认定卡在推理。
+脚本会在进入清理前打印并保存异常；`engine_close_begin.reason` 区分正常完成、推理异常和
+Ctrl+C。如果关闭过程超过 30 秒，会每 30 秒打印 Python 线程栈，保留进程供原生栈检查。
+上游 `Omni.generate()` 自身也可能先调用 close；若卡在其内部清理，检查控制台中
+`[Omni] Failed to run generation` 的原始错误。`close-error.txt` 单独记录外层关闭异常。
+
 复现后，再在失败模式后追加 `--probe log` 看视觉等待位置；最后才用 `--probe sync`
 或 `--launch-blocking 1`。同步打点可能改变甚至消除阻塞，不应作为第一轮基线。
 追加 `--input-kind text` 可做纯文本请求对照，但初始化仍可能跑视觉 profiling，需按阶段区分。

@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import traceback
 
 
 def arguments():
@@ -157,6 +158,7 @@ def main():
                   hf_overrides={"enable_audio_output": False},
                   init_timeout=args.init_timeout, stage_init_timeout=args.init_timeout)
     phase("engine_init_done")
+    close_reason = "completed"
     try:
         if engine.num_stages != 1:
             raise RuntimeError(f"Expected Thinker only; got {engine.num_stages} stages")
@@ -178,10 +180,32 @@ def main():
             print(f"REQUEST {index + 1} DONE: {outputs}", flush=True)
             phase("request_done", request=index + 1)
         print("REPRO COMPLETED: this reduced case did not hang.", flush=True)
+    except BaseException as exc:
+        # Python normally prints an uncaught traceback only AFTER finally has
+        # completed. Persist it now, since engine.close() can itself hang.
+        close_reason = "interrupted" if isinstance(exc, KeyboardInterrupt) else "inference_error"
+        error_text = traceback.format_exc()
+        (run / "inference-error.txt").write_text(error_text, encoding="utf-8")
+        print(error_text, file=sys.stderr, flush=True)
+        phase(close_reason, error_type=type(exc).__name__, error=str(exc))
+        raise
     finally:
-        phase("engine_close_begin")
-        engine.close()
-        phase("engine_close_done")
+        import faulthandler
+        phase("engine_close_begin", reason=close_reason)
+        # Report Python stacks if shutdown stalls; preserve the process for
+        # native-stack inspection rather than forcibly terminating workers.
+        faulthandler.dump_traceback_later(30, repeat=True)
+        try:
+            engine.close()
+            phase("engine_close_done")
+        except BaseException as exc:
+            error_text = traceback.format_exc()
+            (run / "close-error.txt").write_text(error_text, encoding="utf-8")
+            print(error_text, file=sys.stderr, flush=True)
+            phase("engine_close_error", error_type=type(exc).__name__, error=str(exc))
+            raise
+        finally:
+            faulthandler.cancel_dump_traceback_later()
 
 
 if __name__ == "__main__":
