@@ -5,6 +5,7 @@
 ## 当前文件
 
 - `files/install_nextqa_a3_npu_manual.sh`：Ascend A3 / Qwen3-Omni 的 Conda 环境安装与验证清单。
+- `files/repro_vision_wait/`：[TP=4 视觉编码器等待复现与诊断](files/repro_vision_wait/README.md)，直接使用已安装环境。
 
 先修改脚本第 1 节的路径和安装配置，再在 Linux Bash 中逐节执行。
 默认使用当前 shell 中的 `conda`，通过 `conda info --base` 查询其安装根目录，
