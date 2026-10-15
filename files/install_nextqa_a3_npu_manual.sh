@@ -9,7 +9,7 @@
 # ===== 1. 集中配置（换机器、目录或环境时先修改本节） =====
 set -o pipefail
 
-# 常用本地目录调整
+# 常用本地目录调整（ENV_ROOT不要包含空格，隐藏路径）
 export ENV_ROOT=/path/to/your/env-root
 export VERL_OMNI_DIR=/path/to/your/verl-omni
 export ASCEND_ROOT=/usr/local/Ascend/ascend-toolkit
@@ -160,7 +160,6 @@ settings = {
 settings.update({
     'LD_LIBRARY_PATH': prepend_path([prefix / 'lib'], os.environ.get('LD_LIBRARY_PATH', '')),
     'LIBRARY_PATH': prepend_path([prefix / 'lib'], os.environ.get('LIBRARY_PATH', '')),
-    'CMAKE_PREFIX_PATH': prepend_path([prefix], os.environ.get('CMAKE_PREFIX_PATH', '')),
     'PKG_CONFIG_PATH': prepend_path([prefix / 'lib/pkgconfig', prefix / 'share/pkgconfig'],
                                     os.environ.get('PKG_CONFIG_PATH', '')),
     'PYTHONPATH': os.environ.get('PYTHONPATH', ''),
@@ -299,7 +298,7 @@ cd "$SRC_DIR/vllm-ascend"
 git checkout --detach "$VLLM_ASCEND_REF"
 git submodule update --init --recursive
 VLLM_BATCH_INVARIANT=1 PIP_EXTRA_INDEX_URL="$ASCEND_PIP_INDEX_URL" \
-  python -m pip install -e . \
+  python -m pip install -v -e . \
   --extra-index-url "$ASCEND_PIP_INDEX_URL" --extra-index-url "$PYTORCH_CPU_INDEX_URL"
 python -m pip uninstall -y triton triton-ascend
 python -m pip install "triton-ascend==$TRITON_ASCEND_VERSION" concurrent-log-handler \
@@ -334,6 +333,7 @@ accelerate==$ACCELERATE_VERSION
 peft==$PEFT_VERSION
 ray==$RAY_VERSION
 triton-ascend==$TRITON_ASCEND_VERSION
+av<19
 EOF
 python - <<'PY'
 import os
@@ -347,7 +347,6 @@ engine_packages = {'vllm', 'vllm-omni', 'verl'}
 deps = [r for r in project['dependencies']
         if canonicalize_name(Requirement(r).name) not in engine_packages]
 deps += project['optional-dependencies']['audio']
-# torchvision 0.25 自带视频读取路径；不额外安装与 torch ABI 耦合的 TorchCodec。
 deps += ['librosa>=0.10.2', 'soundfile>=0.13.1', 'av>=14',
          'qwen-vl-utils>=0.0.14', 'einops>=0.8.1']
 pathlib.Path(os.environ['REQUIREMENTS_FILE']).write_text('\n'.join(deps) + '\n')
@@ -363,6 +362,46 @@ python -m pip install --force-reinstall --no-deps \
 python -m pip install --force-reinstall --no-deps "torch-npu==$TORCH_NPU_VERSION" \
   --index-url "$HUAWEI_PIP_INDEX_URL" --extra-index-url "$PYTORCH_CPU_INDEX_URL"
 python -m pip install --upgrade onnxruntime -c "$CONSTRAINTS_FILE"
+
+# ===== 安装 TorchCodec：torch 2.10 对应 v0.10.0，CPU 源码构建 =====
+
+python -m pip install pybind11 &&
+
+# 已下载源码时跳过 clone。
+(
+  set -e
+
+  if [[ ! -d "$SRC_DIR/torchcodec" ]]; then
+    git clone --depth 1 --branch v0.10.0 \
+      https://github.com/pytorch/torchcodec.git \
+      "$SRC_DIR/torchcodec"
+  fi
+
+  cd "$SRC_DIR/torchcodec"
+
+  if [[ "$(git rev-parse HEAD)" != "$(git rev-parse 'v0.10.0^{commit}')" ]]; then
+    echo "TorchCodec 源码不是 v0.10.0，请先核对版本。" >&2
+    exit 1
+  fi
+
+  TORCHCODEC_PYBIND11_DIR="$(python -m pybind11 --cmakedir)"
+  test -f "$TORCHCODEC_PYBIND11_DIR/pybind11Config.cmake"
+
+  CMAKE_PREFIX_PATH="$TORCHCODEC_PYBIND11_DIR" \
+  ENABLE_CUDA=0 \
+  CMAKE_BUILD_PARALLEL_LEVEL=8 \
+    python -m pip install -v -e . --no-build-isolation --no-deps
+
+  python - <<'PY'
+import torch
+from importlib.metadata import version
+from torchcodec.decoders import VideoDecoder
+
+print("torch:", torch.__version__)
+print("torchcodec:", version("torchcodec"))
+print("TorchCodec decoder import OK")
+PY
+)
 # 安装日志如出现其他依赖冲突，先记录并处理。
 
 # ===== 10. 安装检查 =====
@@ -466,3 +505,40 @@ PY
   # 同时记录自有源码是否含本地修改，SHA 本身不能代表未提交内容。
   git -C "$VERL_OMNI_DIR" status --short
 } | tee "$LOG_DIR/source-shas.txt"
+
+# ===== 11.1 可选，补齐 verl 梯度同步配置开关；新版已包含时自动跳过 =====
+(
+  set -e
+
+  cd "${SRC_DIR:?请先设置 SRC_DIR}/verl"
+
+  VERL_SYNC_FIX=a0feb78fe8229fde644aec3bbec20b5dc4583509
+
+  # 本地没有该提交时，从上游获取。
+  if ! git cat-file -e "${VERL_SYNC_FIX}^{commit}" 2>/dev/null; then
+    git fetch https://github.com/verl-project/verl.git "$VERL_SYNC_FIX"
+  fi
+
+  if git merge-base --is-ancestor "$VERL_SYNC_FIX" HEAD; then
+    echo "当前 verl 已包含梯度同步配置补丁，跳过。"
+  else
+    if [[ -n "$(git status --porcelain)" ]]; then
+      echo "verl 工作区存在未提交修改，请先处理后再应用补丁。" >&2
+      exit 1
+    fi
+
+    # 检查是否已通过 cherry-pick 等方式应用了等价补丁。
+    if git cherry HEAD "$VERL_SYNC_FIX" "${VERL_SYNC_FIX}^" |
+       grep -q '^- '; then
+      echo "当前 verl 已包含等价补丁，跳过。"
+    else
+      if ! git cherry-pick "$VERL_SYNC_FIX"; then
+        echo "补丁应用失败，请查看 Git 提示；存在冲突时需先解决。" >&2
+        echo "如需取消本次 cherry-pick：git cherry-pick --abort" >&2
+        exit 1
+      fi
+    fi
+  fi
+
+  git log -1 --format='%h %ci %s'
+)
