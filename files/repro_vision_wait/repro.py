@@ -25,12 +25,18 @@ def arguments():
     p.add_argument("--memory", type=float, default=0.6)
     p.add_argument("--probe", choices=("off", "log", "sync"), default="log")
     p.add_argument("--launch-blocking", choices=("0", "1"), default="0")
-    p.add_argument("--eager", action=argparse.BooleanOptionalAction, default=True)
+    execution = p.add_mutually_exclusive_group()
+    execution.add_argument("--eager", action=argparse.BooleanOptionalAction, default=True)
+    execution.add_argument("--execution", choices=("eager", "compile", "piecewise", "graph"),
+                           help="Explicit eager / compile without graphs / PIECEWISE / FULL_AND_PIECEWISE")
+    p.add_argument("--input-kind", choices=("video", "text"), default="video")
     p.add_argument("--async-scheduling", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--init-timeout", type=int, default=600)
     p.add_argument("--output", type=Path, default=Path("vision-repro-logs"))
     p.add_argument("--preflight-only", action="store_true", help="Check packages/config without loading weights or NPU")
     args = p.parse_args()
+    if args.execution is not None:
+        args.eager = args.execution == "eager"
     for key in ("tp", "frames", "frame_stride", "size", "max_tokens", "requests", "max_model_len", "init_timeout"):
         if getattr(args, key) <= 0:
             p.error(f"--{key.replace('_', '-')} must be positive")
@@ -70,6 +76,12 @@ def make_deploy(args):
     }
     if not args.eager:
         stage["compilation_config"] = {"cudagraph_mode": "PIECEWISE", "cudagraph_capture_sizes": [1]}
+    if args.execution is not None:
+        mode = {"eager": "NONE", "compile": "NONE", "piecewise": "PIECEWISE",
+                "graph": "FULL_AND_PIECEWISE"}[args.execution]
+        stage["compilation_config"] = {"mode": 0 if args.eager else 3, "cudagraph_mode": mode}
+        if mode != "NONE":
+            stage["compilation_config"]["cudagraph_capture_sizes"] = [1]
     return {"pipeline": "qwen3_omni_moe_thinker_only", "async_chunk": False, "stages": [stage]}
 
 
@@ -132,29 +144,44 @@ def main():
     from vllm_omni.model_executor.models.qwen3_omni.pipeline import QWEN3_OMNI_THINKER_ONLY_PIPELINE
     from vllm_omni.entrypoints.omni import Omni
     register_pipeline(QWEN3_OMNI_THINKER_ONLY_PIPELINE)
-    frames = load_frames(args)
-    print("Video shape:", frames.shape, "Creating one Thinker TP replica", flush=True)
+    frames = load_frames(args) if args.input_kind == "video" else None
+    def phase(name, **details):
+        record = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "phase": name, **details}
+        with (run / "progress.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record) + "\n")
+        print("[repro]", json.dumps(record), flush=True)
+
+    phase("engine_init_begin", input_kind=args.input_kind,
+          video_shape=list(frames.shape) if frames is not None else None)
     engine = Omni(model=str(args.model), deploy_config=str(deploy),
                   hf_overrides={"enable_audio_output": False},
                   init_timeout=args.init_timeout, stage_init_timeout=args.init_timeout)
+    phase("engine_init_done")
     try:
         if engine.num_stages != 1:
             raise RuntimeError(f"Expected Thinker only; got {engine.num_stages} stages")
         for index in range(args.requests):
+            video_marker = "<|vision_start|><|video_pad|><|vision_end|>" if frames is not None else ""
+            question = "Describe this video briefly." if frames is not None else "Count from one to five."
             prompt = {
                 "prompt": "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
-                          "<|im_start|>user\n<|vision_start|><|video_pad|><|vision_end|>"
-                          f"Describe this video briefly. Request {index + 1}.<|im_end|>\n"
+                          f"<|im_start|>user\n{video_marker}"
+                          f"{question} Request {index + 1}.<|im_end|>\n"
                           "<|im_start|>assistant\n",
-                "multi_modal_data": {"video": frames},
-                "mm_processor_kwargs": {"use_audio_in_video": False},
             }
+            if frames is not None:
+                prompt.update(multi_modal_data={"video": frames},
+                              mm_processor_kwargs={"use_audio_in_video": False})
+            phase("request_begin", request=index + 1)
             print(f"REQUEST {index + 1} BEGIN", flush=True)
             outputs = engine.generate([prompt], [SamplingParams(temperature=0, max_tokens=args.max_tokens, seed=42)])
             print(f"REQUEST {index + 1} DONE: {outputs}", flush=True)
+            phase("request_done", request=index + 1)
         print("REPRO COMPLETED: this reduced case did not hang.", flush=True)
     finally:
+        phase("engine_close_begin")
         engine.close()
+        phase("engine_close_done")
 
 
 if __name__ == "__main__":
