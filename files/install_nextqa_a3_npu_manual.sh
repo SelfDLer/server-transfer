@@ -404,6 +404,36 @@ PY
 )
 # 安装日志如出现其他依赖冲突，先记录并处理。
 
+# ===== 9.1 可选：额外安装 VeOmni 训练后端 =====
+# 需要 VeOmni 时复制执行本节；使用 FSDP2 时跳过。
+# 参考：https://verl-omni.readthedocs.io/en/latest/start/engine_backends.html
+# 仅安装基础包，避免 extras 重新解析并替换已固定的 torch/torch-npu/transformers。
+# 音视频依赖及匹配 torch 2.10 的 TorchCodec 已在前面安装，这里仅补 audioread。
+conda activate "$ENV_PREFIX"
+# 在这里选择要安装的版本。
+export VEOMNI_VERSION=0.1.12
+python -m pip install --no-deps "veomni==$VEOMNI_VERSION"
+python -m pip install audioread -c "$CONSTRAINTS_FILE"
+# 上述安装成功后，再执行导入检查。
+python - <<'PY'
+import os
+from importlib.metadata import version
+
+import torch
+import torch_npu
+import veomni
+from veomni.distributed.offloading import (
+    load_model_to_gpu, load_optimizer, offload_model_to_cpu, offload_optimizer,
+)
+
+for package, key in (('veomni', 'VEOMNI_VERSION'), ('torch', 'TORCH_VERSION'),
+                     ('torch-npu', 'TORCH_NPU_VERSION'), ('transformers', 'TRANSFORMERS_VERSION')):
+    assert version(package) == os.environ[key], (package, version(package), os.environ[key])
+print('veomni:', version('veomni'), veomni.__file__)
+print('VeOmni import/offloading helpers OK; NPU available:', torch.npu.is_available())
+PY
+# 本节仅检查安装和导入；实际训练仍需使用 VeOmni 对应的 NPU 启动配置并验证。
+
 # ===== 10. 安装检查 =====
 conda list -p "$ENV_PREFIX" --explicit > "$LOG_DIR/conda-explicit.txt"
 python -m pip freeze > "$LOG_DIR/pip-freeze.txt"
