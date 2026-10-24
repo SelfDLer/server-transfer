@@ -1,0 +1,92 @@
+# NExT-QA FSDP2 参数精度对比图
+
+读取 **verl console 日志**（例如训练命令经过 `2>&1 | tee run.log` 保存的文件）。
+无需 TensorBoard、PyTorch 或服务器 NPU 环境，只需 Python 3.10+ 和 matplotlib：
+
+```bash
+pip install matplotlib
+python files/plot_nextqa_precision/plot_nextqa_precision.py \
+  --bf16 /path/to/fsdp2_bf16.log \
+  --fp32 /path/to/fsdp2_fp32.log \
+  --output-dir /path/to/precision_figures
+```
+
+两条曲线分别标为 `FSDP2: BF16 parameters` 和
+`FSDP2: FP32 parameters + BF16 compute`，不引用其他后端。
+该标注要求实验确实只改变原始参数精度，并保留 BF16 前后向计算。
+
+## 日志格式与指标
+
+兼容 verl 的标准 console 格式，允许 Ray 前缀、ANSI 颜色码、科学计数法：
+
+```text
+(TaskRunner pid=123) step:10 - val-core/nextqa/reward/mean@1:0.78 - timing_s/step:320.5 - perf/max_memory_allocated_gb:48.2
+```
+
+也可读取带 `step` / `global_step` / `training/global_step` 的 Python 字典日志。
+每组应对应一次实验；同一指标同一步完全重复会去重，值冲突会报错，避免默默混合续训或不同实验。
+不要使用只含进度条、没有指标行的日志。终端视觉换行不影响解析；手工拆成多行的指标行不支持。
+
+默认指标：
+
+- reward：`val-core/nextqa/reward/mean@1`
+- 单步耗时：`timing_s/step`，单位秒
+- 显存：`perf/max_memory_allocated_gb`，默认按 GiB 解释（字节除以 1024³）
+
+**某些版本不会输出显存指标**。先查看实际日志中的名字：
+
+```bash
+python files/plot_nextqa_precision/plot_nextqa_precision.py \
+  --bf16 /path/to/fsdp2_bf16.log --fp32 /path/to/fsdp2_fp32.log --list-tags
+```
+
+按实际名称覆盖 `--reward-tag`、`--time-tag`、`--memory-tag`。
+若显存日志单位不是 GiB，设置 `--memory-unit bytes` / `MiB` / `GB`。
+缺少 reward 会报错；缺少耗时或显存会警告并显示 N/A，不会估算或填零。
+若选择 `max_memory_reserved`，需在 PR 中明确它是 reserved memory，不能与 allocated memory 混比。
+
+## 统计口径
+
+reward 图显示原始验证点，不平滑、不插值、不补缺失步；默认展示两次运行各自的全部点。
+用 `--reward-max-step 100` 可统一显示上限。
+
+耗时/显存表默认从第 5 步开始，到两组共同记录的最后一个耗时 step；
+仅使用两组都存在的相同 step。耗时显示均值、中位数及样本量，显存显示窗口内日志值最大值及样本量。
+可显式指定窗口并排除验证、保存或 profiling 步：
+
+```bash
+python files/plot_nextqa_precision/plot_nextqa_precision.py \
+  --bf16 /path/to/fsdp2_bf16.log --fp32 /path/to/fsdp2_fp32.log \
+  --stats-start 5 --stats-end 50 \
+  --exclude-steps 10 20 30 40 50 \
+  --reward-max-step 100 --output-dir /path/to/precision_figures
+```
+
+排除只作用于成本统计，**不会删掉 reward 验证点**。
+没有共同耗时记录时，可设置 `--stats-end` 仍统计显存。
+日志显存峰值可能是进程累计峰值，未必在每步重置；它也未必代表所有 rank 的最大值。
+日志耗时可能包含验证/保存开销，不通过日志 wall-clock 时间差估算。
+不要把带 profiler 的运行与普通运行直接作为性能对照。
+
+输出：
+
+- `reward.png`、`reward.pdf`：主图。
+- `cost_summary.png`、`cost_summary.csv`、`cost_summary.md`：成本表。
+- `reward_points.csv`：用于作图的原始数值。
+- `plot_metadata.json`：输入路径、指标名、实际统计 step 列表及参数。
+
+同一输出目录重复执行会覆盖这些文件。默认脚注声明每组一次运行；
+可通过 `--note '...'` 和 `--title '...'` 设置图注和标题。
+PR 附上硬件、依赖、模型和数据版本，确认学习率、batch、总训练步数、seed、评估采样配置一致。
+输出元数据含输入文件路径，公开分享前检查路径是否含私人信息。
+
+可选 CSV 输入：长表列为 `step,tag,value`；宽表首列为 `step`，其他列名为完整指标名，缺失值留空。
+这不是必须的转换步骤，直接传 `.log` 文件即可。
+
+## 本地回归检查
+
+```bash
+python -m unittest discover -s files/plot_nextqa_precision -p 'test_*.py'
+```
+
+测试使用合成数据，验证日志解析、重复冲突检测、统计窗口及实际图片输出；不代表真实实验结果。

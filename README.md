@@ -4,6 +4,8 @@
 
 ## 当前文件
 
+- `files/plot_nextqa_precision/`：[NExT-QA FSDP2 精度对比绘图](files/plot_nextqa_precision/README.md)，读取 verl console 日志，输出 reward 主图和耗时/显存表。
+
 - `files/install_nextqa_a3_npu_manual.sh`：Ascend A3 / Qwen3-Omni 的 Conda 环境安装与验证清单。
 - `files/repro_vision_wait/`：[TP=4 视觉编码器等待复现与诊断](files/repro_vision_wait/README.md)，直接使用已安装环境。
 
