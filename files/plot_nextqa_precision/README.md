@@ -17,7 +17,7 @@ python files/plot_nextqa_precision/plot_nextqa_precision.py \
 
 ## 日志格式与指标
 
-兼容 verl 的标准 console 格式，允许 Ray 前缀、ANSI 颜色码、科学计数法：
+兼容 verl 的标准 console 格式，允许 Ray 前缀、ANSI 颜色码、科学计数法，以及 `np.float64(0.84)`、`numpy.float32(...)` 等 NumPy 数值标量：
 
 ```text
 (TaskRunner pid=123) step:10 - val-core/nextqa/reward/mean@1:0.78 - timing_s/step:320.5 - perf/max_memory_allocated_gb:48.2

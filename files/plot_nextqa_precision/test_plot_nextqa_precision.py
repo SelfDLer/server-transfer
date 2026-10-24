@@ -29,6 +29,25 @@ class PlotTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Conflicting"):
                 read_metrics(path)
 
+    def test_numpy_scalar_console_and_dictionary(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "numpy.log"
+            path.write_text(
+                "(TaskRunner pid=42) step:10 - val-core/nextqa/reward/mean@1:np.float64(0.84)"
+                " - timing_s/step:numpy.float32(2.2e2) - perf/max_memory_allocated_gb:np.int64(48)\n"
+                "prefix {'training/global_step': np.int64(20), "
+                "'val-core/nextqa/reward/mean@1': numpy.float64(8.5e-1)}\n"
+                "step:30 - actor/pg_loss:np.float32(-1.2e-3)\n",
+                encoding="utf-8",
+            )
+            data = read_metrics(path)
+            self.assertEqual(
+                data["val-core/nextqa/reward/mean@1"], {10: 0.84, 20: 0.85}
+            )
+            self.assertEqual(data["timing_s/step"], {10: 220.0})
+            self.assertEqual(data["perf/max_memory_allocated_gb"], {10: 48.0})
+            self.assertEqual(data["actor/pg_loss"], {30: -0.0012})
+
     def test_end_to_end_paired_cost_and_raw_reward(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -38,7 +57,9 @@ class PlotTests(unittest.TestCase):
                     lines.append(
                         f"step:{step} - timing_s/step:{duration + step} - perf/max_memory_allocated_gb:{40 + step}"
                     )
-                lines.append(f"step:10 - val-core/nextqa/reward/mean@1:{reward}")
+                lines.append(
+                    f"step:10 - val-core/nextqa/reward/mean@1:np.float64({reward})"
+                )
                 (root / f"{name}.log").write_text("\n".join(lines), encoding="utf-8")
             out = root / "out"
             subprocess.run(
@@ -65,7 +86,9 @@ class PlotTests(unittest.TestCase):
             self.assertEqual(float(rows[1]["mean_step_s"]), 337)
             self.assertEqual(float(rows[0]["peak_logged_memory_GiB"]), 49)
             self.assertEqual(
-                json.loads((out / "plot_metadata.json").read_text(encoding="utf-8"))["timing_steps"],
+                json.loads((out / "plot_metadata.json").read_text(encoding="utf-8"))[
+                    "timing_steps"
+                ],
                 [5, 6, 7, 8, 9],
             )
             with (out / "reward_points.csv").open() as stream:

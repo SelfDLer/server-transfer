@@ -48,10 +48,15 @@ def read_metrics(path):
             r"(?:^|[\s,{])['\"]?(?:step|global_step|training/global_step)['\"]?\s*[:=]\s*(\d+)\b"
         )
         number = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+        # Unwrap only numeric literals from known NumPy scalar reprs. Never eval logs.
+        numpy_scalar = re.compile(
+            r"(?<![\w.])(?:np|numpy)\.(?:float(?:16|32|64)|u?int(?:8|16|32|64))"
+            r"\(\s*(" + number + r")\s*\)"
+        )
         pair_re = re.compile(r"(?:^|\s+-\s+)([\w/@.\-]+)\s*:\s*(" + number + r")\s*$")
         with path.open(encoding="utf-8", errors="replace") as stream:
             for line_number, raw in enumerate(stream, 1):
-                line = ansi.sub("", raw)
+                line = numpy_scalar.sub(r"\1", ansi.sub("", raw))
                 match = step_re.search(line)
                 if not match:
                     continue
