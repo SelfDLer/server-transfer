@@ -11,8 +11,8 @@ python files/plot_nextqa_precision/plot_nextqa_precision.py \
   --output-dir /path/to/precision_figures
 ```
 
-两条曲线分别标为 `FSDP2: BF16 parameters` 和
-`FSDP2: FP32 parameters + BF16 compute`，不引用其他后端。
+两条曲线图例分别为 `BF16 parameters` 和 `FP32 parameters`，使用蓝色和朱红色。
+横轴为 `Training step`，纵轴为 `val-reward(mean@1)`；默认不显示标题、图注或网格。
 该标注要求实验确实只改变原始参数精度，并保留 BF16 前后向计算。
 
 ## 日志格式与指标
@@ -77,8 +77,9 @@ python files/plot_nextqa_precision/plot_nextqa_precision.py \
 - `reward_points.csv`：用于作图的原始数值。
 - `plot_metadata.json`：输入路径、指标名、实际统计 step 列表及参数。
 
-同一输出目录重复执行会覆盖这些文件。默认脚注声明每组一次运行；
-可通过 `--note '...'` 和 `--title '...'` 设置图注和标题。
+同一输出目录重复执行会覆盖这些文件。图和表默认不带标题或图注；
+如有需要，可通过 `--note '...'` 和 `--title '...'` 为 reward 图添加图注和标题。
+统计口径和样本量仍保留在 CSV、Markdown 和 JSON 中。
 PR 附上硬件、依赖、模型和数据版本，确认学习率、batch、总训练步数、seed、评估采样配置一致。
 输出元数据含输入文件路径，公开分享前检查路径是否含私人信息。
 

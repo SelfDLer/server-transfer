@@ -146,10 +146,8 @@ def main():
     parser.add_argument(
         "--list-tags", action="store_true", help="Print metric tags and exit"
     )
-    parser.add_argument("--title", default="NExT-QA: FSDP2 parameter precision")
-    parser.add_argument(
-        "--note", default="Single run per setting; raw validation points, no smoothing."
-    )
+    parser.add_argument("--title", default="", help="Optional plot title")
+    parser.add_argument("--note", default="", help="Optional plot footnote")
     args = parser.parse_args()
     if args.stats_start < 0 or (
         args.stats_end is not None and args.stats_end < args.stats_start
@@ -180,34 +178,19 @@ def main():
             "font.family": "DejaVu Sans",
             "font.size": 11,
             "pdf.fonttype": 42,
-            "text.color": "#243247",
-            "axes.labelcolor": "#435268",
-            "xtick.color": "#64748B",
-            "ytick.color": "#64748B",
-            "axes.edgecolor": "#CBD5E1",
             "axes.linewidth": 0.8,
             "savefig.facecolor": "white",
         }
     )
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
-    colors = ["#C77936", "#277C8E"]
-    display_labels = ["BF16 parameters", "FP32 parameters · BF16 compute"]
+    colors = ["#0072B2", "#D55E00"]
+    display_labels = ["BF16 parameters", "FP32 parameters"]
     # Compare only the observed reward range covered by the shorter run.
     reward_end = min(max(run[args.reward_tag]) for run in runs)
     if args.reward_max_step is not None:
         reward_end = min(reward_end, args.reward_max_step)
-    fig, ax = plt.subplots(figsize=(9, 5.8))
-    fig.subplots_adjust(left=0.12, right=0.96, bottom=0.20, top=0.73)
-    fig.text(0.12, 0.94, args.title, fontsize=17, weight="bold", va="top")
-    fig.text(
-        0.12,
-        0.88,
-        f"Validation reward  /  Both runs shown through step {reward_end}",
-        fontsize=10,
-        color="#64748B",
-        va="top",
-    )
+    fig, ax = plt.subplots(figsize=(6.4, 4.3))
     reward_rows = []
     for label, display_label, color, marker, run in zip(
         labels, display_labels, colors, ["o", "s"], runs
@@ -220,11 +203,11 @@ def main():
         ax.plot(
             *zip(*points),
             marker=marker,
-            markersize=5,
+            markersize=4,
             markeredgecolor="white",
             clip_on=False,
             markeredgewidth=1,
-            linewidth=2.2,
+            linewidth=1.6,
             color=color,
             label=display_label,
         )
@@ -235,25 +218,18 @@ def main():
         reward_start if reward_start < reward_end else reward_end - 0.5,
         reward_end if reward_start < reward_end else reward_end + 0.5,
     )
-    ax.set(xlabel="Training step", ylabel="Validation reward (mean@1)")
+    ax.set(xlabel="Training step", ylabel="val-reward(mean@1)")
     ax.xaxis.set_major_locator(MaxNLocator(nbins=7, integer=True, steps=[1, 2, 5, 10]))
     ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
     ax.yaxis.set_major_formatter(StrMethodFormatter("{x:.3f}"))
-    ax.margins(y=0.18)
-    ax.set_axisbelow(True)
-    ax.grid(axis="y", color="#E5EAF0", linewidth=0.8)
-    ax.tick_params(length=0, pad=8)
-    ax.spines[["top", "right", "left"]].set_visible(False)
-    ax.legend(
-        loc="lower left",
-        bbox_to_anchor=(0, 1.04),
-        ncol=2,
-        borderaxespad=0,
-        frameon=False,
-        fontsize=10,
-        handlelength=2.4,
-    )
-    fig.text(0.12, 0.065, args.note, fontsize=9, color="#64748B", wrap=True)
+    ax.margins(y=0.12)
+    ax.tick_params(direction="in", length=3)
+    ax.legend(loc="best", frameon=False, fontsize=10)
+    if args.title:
+        ax.set_title(args.title)
+    if args.note:
+        fig.text(0.5, 0.02, args.note, ha="center", fontsize=8, wrap=True)
+    fig.tight_layout(rect=(0, 0.07 if args.note else 0, 1, 1))
     for extension in ("png", "pdf"):
         fig.savefig(out / f"reward.{extension}", dpi=300)
     plt.close(fig)
@@ -346,18 +322,8 @@ def main():
     (out / "cost_summary.md").write_text(
         markdown + "\n" + note + "\n", encoding="utf-8"
     )
-    fig, ax = plt.subplots(figsize=(10, 3.6))
-    fig.subplots_adjust(left=0.05, right=0.95, bottom=0.30, top=0.72)
+    fig, ax = plt.subplots(figsize=(8, 1.6))
     ax.axis("off")
-    fig.text(0.05, 0.93, "NExT-QA: training cost", fontsize=17, weight="bold", va="top")
-    fig.text(
-        0.05,
-        0.82,
-        f"Steps {args.stats_start}–{end}  /  Paired measurements",
-        fontsize=10,
-        color="#64748B",
-        va="top",
-    )
     display_cells = [
         [display_labels[i], row[2], row[3], row[5]] for i, row in enumerate(cells)
     ]
@@ -369,36 +335,23 @@ def main():
             "Median step (s)",
             "Peak logged (GiB)",
         ],
-        cellLoc="left",
-        colLoc="left",
+        cellLoc="center",
+        colLoc="center",
         bbox=[0, 0, 1, 1],
-        colWidths=[0.40, 0.19, 0.19, 0.22],
+        colWidths=[0.28, 0.23, 0.23, 0.26],
     )
     table.auto_set_font_size(False)
     table.set_fontsize(10)
-    for (row, col), cell in table.get_celld().items():
-        cell.set_edgecolor("white")
-        cell.set_linewidth(2)
-        cell.PAD = 0.07
-        cell.set_facecolor("#EFF3F7" if row == 0 else "#FAFBFC")
+    for (row, _), cell in table.get_celld().items():
+        cell.set_facecolor("white")
+        cell.set_edgecolor("black")
+        cell.set_linewidth(0.8)
+        cell.visible_edges = (
+            "TB" if row == 0 else "B" if row == len(display_cells) else ""
+        )
         if row == 0:
-            cell.set_text_props(weight="bold", color="#435268")
-        elif col == 0:
-            cell.set_text_props(weight="bold", color=colors[row - 1])
-    fig.text(
-        0.05,
-        0.19,
-        f"Paired samples per run: time {len(selected)} · memory {len(memory_steps)}",
-        fontsize=9,
-        color="#64748B",
-    )
-    fig.text(
-        0.05,
-        0.10,
-        "Memory is the maximum logged value. Measurement details: cost_summary.md.",
-        fontsize=9,
-        color="#64748B",
-    )
+            cell.set_text_props(weight="bold")
+    fig.tight_layout(pad=0.6)
     fig.savefig(out / "cost_summary.png", dpi=300)
     plt.close(fig)
     metadata = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
