@@ -11,7 +11,7 @@ python files/plot_nextqa_precision/plot_nextqa_precision.py \
   --output-dir /path/to/precision_figures
 ```
 
-两条曲线图例分别为 `BF16 parameters` 和 `FP32 parameters`，使用蓝色和朱红色。
+两条曲线图例分别为 `bf16` 和 `fp32`，使用蓝色和朱红色。
 横轴为 `Training step`，纵轴为 `val-reward(mean@1)`；默认不显示标题、图注或网格。
 该标注要求实验确实只改变原始参数精度，并保留 BF16 前后向计算。
 

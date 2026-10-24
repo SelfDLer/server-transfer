@@ -185,7 +185,7 @@ def main():
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
     colors = ["#0072B2", "#D55E00"]
-    display_labels = ["BF16 parameters", "FP32 parameters"]
+    display_labels = ["bf16", "fp32"]
     # Compare only the observed reward range covered by the shorter run.
     reward_end = min(max(run[args.reward_tag]) for run in runs)
     if args.reward_max_step is not None:
