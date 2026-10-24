@@ -47,8 +47,10 @@ python files/plot_nextqa_precision/plot_nextqa_precision.py \
 
 ## 统计口径
 
-reward 图显示原始验证点，不平滑、不插值、不补缺失步；默认展示两次运行各自的全部点。
-用 `--reward-max-step 100` 可统一显示上限。
+reward 图显示原始验证点，不平滑、不插值、不补缺失步；横轴默认截止到两组最后一个 reward step 的较小值。
+例如两组分别到 100 和 60 步，图和 `reward_points.csv` 都只保留到 60 步的数据。
+用 `--reward-max-step 50` 可进一步缩短显示范围；大于较短运行的上限不会延长横轴。
+实际截止步记录在 `plot_metadata.json` 的 `reward_end_step` 中。
 
 耗时/显存表默认从第 5 步开始，到两组共同记录的最后一个耗时 step；
 仅使用两组都存在的相同 step。耗时显示均值、中位数及样本量，显存显示窗口内日志值最大值及样本量。

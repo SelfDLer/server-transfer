@@ -141,7 +141,7 @@ def main():
     parser.add_argument(
         "--reward-max-step",
         type=int,
-        help="Optional reward plot cutoff; no interpolation",
+        help="Further limit the shorter run cutoff; no interpolation",
     )
     parser.add_argument(
         "--list-tags", action="store_true", help="Print metric tags and exit"
@@ -155,6 +155,8 @@ def main():
         args.stats_end is not None and args.stats_end < args.stats_start
     ):
         parser.error("Invalid statistics step range")
+    if args.reward_max_step is not None and args.reward_max_step < 0:
+        parser.error("Reward cutoff must be nonnegative")
     runs = [read_metrics(args.bf16), read_metrics(args.fp32)]
     labels = ["FSDP2: BF16 parameters", "FSDP2: FP32 parameters + BF16 compute"]
     if args.list_tags:
@@ -171,40 +173,89 @@ def main():
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator, StrMethodFormatter
 
     plt.rcParams.update(
-        {"font.family": "DejaVu Sans", "font.size": 10, "pdf.fonttype": 42}
+        {
+            "font.family": "DejaVu Sans",
+            "font.size": 11,
+            "pdf.fonttype": 42,
+            "text.color": "#243247",
+            "axes.labelcolor": "#435268",
+            "xtick.color": "#64748B",
+            "ytick.color": "#64748B",
+            "axes.edgecolor": "#CBD5E1",
+            "axes.linewidth": 0.8,
+            "savefig.facecolor": "white",
+        }
     )
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
-    colors = ["#D97706", "#2563EB"]
-    fig, ax = plt.subplots(figsize=(8.5, 5.1))
+    colors = ["#C77936", "#277C8E"]
+    display_labels = ["BF16 parameters", "FP32 parameters · BF16 compute"]
+    # Compare only the observed reward range covered by the shorter run.
+    reward_end = min(max(run[args.reward_tag]) for run in runs)
+    if args.reward_max_step is not None:
+        reward_end = min(reward_end, args.reward_max_step)
+    fig, ax = plt.subplots(figsize=(9, 5.8))
+    fig.subplots_adjust(left=0.12, right=0.96, bottom=0.20, top=0.73)
+    fig.text(0.12, 0.94, args.title, fontsize=17, weight="bold", va="top")
+    fig.text(
+        0.12,
+        0.88,
+        f"Validation reward  /  Both runs shown through step {reward_end}",
+        fontsize=10,
+        color="#64748B",
+        va="top",
+    )
     reward_rows = []
-    for label, color, run in zip(labels, colors, runs):
+    for label, display_label, color, marker, run in zip(
+        labels, display_labels, colors, ["o", "s"], runs
+    ):
         points = sorted(
-            (s, v)
-            for s, v in run[args.reward_tag].items()
-            if args.reward_max_step is None or s <= args.reward_max_step
+            (s, v) for s, v in run[args.reward_tag].items() if s <= reward_end
         )
         if not points:
             raise ValueError(f"No reward points within cutoff: {label}")
         ax.plot(
             *zip(*points),
-            marker="o",
-            markersize=4,
-            linewidth=1.8,
+            marker=marker,
+            markersize=5,
+            markeredgecolor="white",
+            clip_on=False,
+            markeredgewidth=1,
+            linewidth=2.2,
             color=color,
-            label=label,
+            label=display_label,
         )
         reward_rows.extend({"run": label, "step": s, "reward": v} for s, v in points)
-    ax.set(title=args.title, xlabel="Global step", ylabel="Validation reward (mean@1)")
-    ax.grid(alpha=0.22)
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(loc="best", frameon=False, fontsize=9)
-    fig.text(0.5, 0.02, args.note, ha="center", fontsize=8, wrap=True)
-    fig.tight_layout(rect=(0, 0.07, 1, 1))
+    reward_start = min(row["step"] for row in reward_rows)
+    # Keep a single-point run visible without identical axis limits.
+    ax.set_xlim(
+        reward_start if reward_start < reward_end else reward_end - 0.5,
+        reward_end if reward_start < reward_end else reward_end + 0.5,
+    )
+    ax.set(xlabel="Training step", ylabel="Validation reward (mean@1)")
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=7, integer=True, steps=[1, 2, 5, 10]))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+    ax.yaxis.set_major_formatter(StrMethodFormatter("{x:.3f}"))
+    ax.margins(y=0.18)
+    ax.set_axisbelow(True)
+    ax.grid(axis="y", color="#E5EAF0", linewidth=0.8)
+    ax.tick_params(length=0, pad=8)
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.legend(
+        loc="lower left",
+        bbox_to_anchor=(0, 1.04),
+        ncol=2,
+        borderaxespad=0,
+        frameon=False,
+        fontsize=10,
+        handlelength=2.4,
+    )
+    fig.text(0.12, 0.065, args.note, fontsize=9, color="#64748B", wrap=True)
     for extension in ("png", "pdf"):
-        fig.savefig(out / f"reward.{extension}", dpi=220)
+        fig.savefig(out / f"reward.{extension}", dpi=300)
     plt.close(fig)
 
     # Pair timing samples by step to avoid silently comparing different windows.
@@ -295,35 +346,68 @@ def main():
     (out / "cost_summary.md").write_text(
         markdown + "\n" + note + "\n", encoding="utf-8"
     )
-    fig, ax = plt.subplots(figsize=(13, 2.7))
+    fig, ax = plt.subplots(figsize=(10, 3.6))
+    fig.subplots_adjust(left=0.05, right=0.95, bottom=0.30, top=0.72)
     ax.axis("off")
+    fig.text(0.05, 0.93, "NExT-QA: training cost", fontsize=17, weight="bold", va="top")
+    fig.text(
+        0.05,
+        0.82,
+        f"Steps {args.stats_start}–{end}  /  Paired measurements",
+        fontsize=10,
+        color="#64748B",
+        va="top",
+    )
+    display_cells = [
+        [display_labels[i], row[2], row[3], row[5]] for i, row in enumerate(cells)
+    ]
     table = ax.table(
-        cellText=cells,
-        colLabels=columns,
-        cellLoc="center",
-        loc="center",
-        colWidths=[0.37, 0.08, 0.14, 0.15, 0.08, 0.18],
+        cellText=display_cells,
+        colLabels=[
+            "Parameter precision",
+            "Mean step (s)",
+            "Median step (s)",
+            "Peak logged (GiB)",
+        ],
+        cellLoc="left",
+        colLoc="left",
+        bbox=[0, 0, 1, 1],
+        colWidths=[0.40, 0.19, 0.19, 0.22],
     )
     table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1, 2)
-    for (row, _), cell in table.get_celld().items():
-        cell.set_edgecolor("#CBD5E1")
+    table.set_fontsize(10)
+    for (row, col), cell in table.get_celld().items():
+        cell.set_edgecolor("white")
+        cell.set_linewidth(2)
+        cell.PAD = 0.07
+        cell.set_facecolor("#EFF3F7" if row == 0 else "#FAFBFC")
         if row == 0:
-            cell.set_facecolor("#E2E8F0")
-    ax.set_title("NExT-QA: training cost", pad=10)
+            cell.set_text_props(weight="bold", color="#435268")
+        elif col == 0:
+            cell.set_text_props(weight="bold", color=colors[row - 1])
     fig.text(
-        0.5,
-        0.04,
-        f"Steps {args.stats_start}–{end}; paired samples. Memory: maximum logged value; see cost_summary.md.",
-        ha="center",
-        fontsize=8,
+        0.05,
+        0.19,
+        f"Paired samples per run: time {len(selected)} · memory {len(memory_steps)}",
+        fontsize=9,
+        color="#64748B",
     )
-    fig.tight_layout(rect=(0, 0.1, 1, 1))
-    fig.savefig(out / "cost_summary.png", dpi=220, bbox_inches="tight")
+    fig.text(
+        0.05,
+        0.10,
+        "Memory is the maximum logged value. Measurement details: cost_summary.md.",
+        fontsize=9,
+        color="#64748B",
+    )
+    fig.savefig(out / "cost_summary.png", dpi=300)
     plt.close(fig)
     metadata = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
-    metadata.update(timing_steps=selected, memory_steps=memory_steps, cost_note=note)
+    metadata.update(
+        reward_end_step=reward_end,
+        timing_steps=selected,
+        memory_steps=memory_steps,
+        cost_note=note,
+    )
     (out / "plot_metadata.json").write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
     )

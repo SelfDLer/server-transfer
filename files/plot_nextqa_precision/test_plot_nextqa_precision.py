@@ -60,6 +60,8 @@ class PlotTests(unittest.TestCase):
                 lines.append(
                     f"step:10 - val-core/nextqa/reward/mean@1:np.float64({reward})"
                 )
+                if name == "bf16":
+                    lines.append("step:20 - val-core/nextqa/reward/mean@1:0.81")
                 (root / f"{name}.log").write_text("\n".join(lines), encoding="utf-8")
             out = root / "out"
             subprocess.run(
@@ -92,7 +94,15 @@ class PlotTests(unittest.TestCase):
                 [5, 6, 7, 8, 9],
             )
             with (out / "reward_points.csv").open() as stream:
-                self.assertEqual(len(list(csv.DictReader(stream))), 4)
+                points = list(csv.DictReader(stream))
+                self.assertEqual(len(points), 4)
+                self.assertEqual(max(int(row["step"]) for row in points), 10)
+            self.assertEqual(
+                json.loads((out / "plot_metadata.json").read_text(encoding="utf-8"))[
+                    "reward_end_step"
+                ],
+                10,
+            )
             for name in ("reward.png", "reward.pdf", "cost_summary.png"):
                 self.assertGreater((out / name).stat().st_size, 1000)
 
