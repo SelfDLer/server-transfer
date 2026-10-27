@@ -93,3 +93,24 @@ python -m unittest discover -s files/plot_nextqa_precision -p 'test_*.py'
 ```
 
 测试使用合成数据，验证日志解析、重复冲突检测、统计窗口及实际图片输出；不代表真实实验结果。
+
+## 仅复制文本的 PR 指标提取
+
+不方便传输日志或上传文件时，在仓库根目录运行（仅需 Python 标准库）：
+
+```bash
+python files/plot_nextqa_precision/extract_pr_metrics.py /path/to/fsdp2_bf16.log --label fsdp2_bf16
+python files/plot_nextqa_precision/extract_pr_metrics.py /path/to/fsdp2_fp32.log --label fsdp2_fp32
+python files/plot_nextqa_precision/extract_pr_metrics.py /path/to/veomni.log --label veomni_fp32
+```
+
+复制 `BEGIN_METRICS` 到 `END_METRICS` 的终端文本即可，无需上传文件。
+标签应反映实际实验配置；它不会从日志推断后端或参数精度。
+输出包含逐步耗时及分项、actor allocated/reserved 显存、验证 reward、训练 reward、训推一致性及其他辅助指标。
+没有验证的步数保留空值，不根据 step 是否整除 10 推断验证结果，也不插值。
+显存优先选择带 `actor/` 前缀的指标，并在 sources 中注明实际来源；保持原始日志单位与统计范围。
+`step_s` 与 `val_s` 分开保留，不自动相减（验证耗时不一定包含在 step 计时器内）。
+使用 `--start 0 --end 50`、`--start 51 --end 100` 分段复制较长结果；每段保留头尾。
+可加 `--note 'hardware=...; seed=...; batch=...; precision=...'` 说明配置或实验差异。
+输出为 8 位有效数字，不输出原始日志路径或提示词。
+FSDP2 精度 PR 比较 fsdp2_bf16 与 fsdp2_fp32；后端适配 PR 比较配置对齐的 fsdp2_fp32 与 veomni_fp32。
