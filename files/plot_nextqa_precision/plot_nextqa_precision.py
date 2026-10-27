@@ -112,6 +112,7 @@ def main():
     parser.add_argument(
         "--output-dir", type=Path, default=Path("nextqa_precision_figures")
     )
+    parser.add_argument("--labels", nargs=2, default=["bf16", "fp32"])
     parser.add_argument("--reward-tag", default="val-core/nextqa/reward/mean@1")
     parser.add_argument(
         "--time-tag", default="timing_s/step", help="Logged step duration in seconds"
@@ -156,7 +157,7 @@ def main():
     if args.reward_max_step is not None and args.reward_max_step < 0:
         parser.error("Reward cutoff must be nonnegative")
     runs = [read_metrics(args.bf16), read_metrics(args.fp32)]
-    labels = ["FSDP2: BF16 parameters", "FSDP2: FP32 parameters + BF16 compute"]
+    labels = args.labels
     if args.list_tags:
         for label, run in zip(labels, runs):
             print(label + "\n" + "\n".join(sorted(run)))
@@ -185,7 +186,7 @@ def main():
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
     colors = ["#0072B2", "#D55E00"]
-    display_labels = ["bf16", "fp32"]
+    display_labels = labels
     # Compare only the observed reward range covered by the shorter run.
     reward_end = min(max(run[args.reward_tag]) for run in runs)
     if args.reward_max_step is not None:

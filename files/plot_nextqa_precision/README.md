@@ -114,3 +114,27 @@ python files/plot_nextqa_precision/extract_pr_metrics.py /path/to/veomni.log --l
 可加 `--note 'hardware=...; seed=...; batch=...; precision=...'` 说明配置或实验差异。
 输出为 8 位有效数字，不输出原始日志路径或提示词。
 FSDP2 精度 PR 比较 fsdp2_bf16 与 fsdp2_fp32；后端适配 PR 比较配置对齐的 fsdp2_fp32 与 veomni_fp32。
+
+## 一次生成两份 PR 的图和摘要
+
+```bash
+pip install matplotlib
+python files/plot_nextqa_precision/compare_pr_experiments.py \
+  --fsdp2-bf16 /path/to/fsdp2_bf16.log \
+  --fsdp2-fp32 /path/to/fsdp2_fp32.log \
+  --veomni /path/to/veomni.log \
+  --output-dir pr_figures
+```
+
+- `pr_figures/precision/`：FSDP2 bf16 与 fp32 的 reward 图和耗时/显存表。
+- `pr_figures/backend/`：FSDP2 fp32 与 VeOmni 的 reward 图和耗时/显存表。
+- 复制终端 `BEGIN_PR_SUMMARY` 到 `END_PR_SUMMARY` 的内容用于撰写 PR，无需传完整日志。
+
+VeOmni 对照要求同样使用 FP32 原始参数、BF16 计算，并核对硬件、batch、数据、学习率、seed 和评估配置。
+摘要中的 reward 数值为 `[step, value]`，起始/最终/最佳只使用两组共同的验证步。
+图保留截止步以内各自的原始点；耗时窗口默认第 5 步至较短运行最后一个验证步，仅比较双方都有记录的步数。
+可指定 `--stats-start`、`--stats-end`、`--exclude-steps`、`--reward-max-step`；统计上限不会超过 reward 截止步。
+缺失指标为 null；不补零、不扣除验证计时、不推断未记录的配置。
+`left_over_right_speedup` 为左侧平均单步时间 / 右侧平均单步时间。
+显存沿用日志单位和作用域；两个来源不同的指标在据此得出结论前应核对其定义。
+训练精度/后端以命令行输入所代表的实验为准，脚本不会验证实际训练环境。
